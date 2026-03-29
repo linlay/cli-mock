@@ -1,0 +1,170 @@
+# CLAUDE.md
+
+## 1. 项目概览
+
+`cli-mock` 是一个轻量级 mock CLI，用来给 shell 脚本、自动化流程和测试场景提供稳定、可控的命令行行为。它不是通用任务执行器，而是有意只提供少量、边界清晰的模拟动作。
+
+当前核心能力：
+
+- 输出版本信息：`version`
+- 延迟执行：`sleep`
+- 输出到标准输出或标准错误：`echo`、`stderr`
+- 返回指定退出码或失败：`exit`、`fail`
+- 处理结构化和列表输出：`json`、`args`、`lines`
+- 读取运行环境：`env`、`stdin`
+- 生成带时间间隔的流式输出：`stream`
+
+## 2. 技术栈
+
+- 语言：Go
+- CLI 框架：`spf13/cobra`
+- 构建与测试：`go build`、`go test`
+- 版本信息：`internal/buildinfo`
+- 依赖管理：Go Modules
+
+当前通过 `replace github.com/spf13/cobra => ./third_party/cobra` 使用仓库内的本地依赖副本。
+
+## 3. 架构设计
+
+模块分层很简单：
+
+- `cmd/mock`
+  进程入口，只负责接收参数并把退出码交给操作系统。
+- `internal/app`
+  负责根命令组装、子命令定义、错误与退出码语义。
+- `internal/buildinfo`
+  负责版本字符串输出。
+- `third_party/cobra`
+  本地 vendored CLI 依赖。
+
+核心调用链：
+
+1. `main` 调用 `app.Execute`
+2. `Execute` 构建 root command，并注入 `stdin/stdout/stderr`
+3. Cobra 完成命令匹配和参数分发
+4. 子命令返回普通错误、usage 错误或带退出码的 `exitError`
+5. `Execute` 统一把错误映射为进程退出码
+
+退出码语义：
+
+- `0`
+  成功
+- `1`
+  业务失败，例如 `fail` 或 `env` 读取不到变量
+- `2`
+  用法错误，例如未知命令或非法参数
+
+## 4. 目录结构
+
+- `cmd/mock`
+  CLI 程序入口
+- `internal/app`
+  根命令、子命令、参数解析、退出码语义、测试
+- `internal/buildinfo`
+  版本信息
+- `third_party/cobra`
+  本地 Cobra 依赖
+
+文档职责：
+
+- `README.md`
+  面向使用者的快速开始、示例、简单排查
+- `CLAUDE.md`
+  项目事实、模块分工、开发约定
+
+## 5. 数据结构
+
+当前项目没有数据库或持久化模型，核心数据结构主要是进程级命令语义。
+
+### `exitError`
+
+`internal/app` 定义了：
+
+- `Code int`
+- `Err error`
+
+它用来把命令执行错误和进程退出码绑定起来，供 `Execute` 统一处理。
+
+### 版本信息
+
+`internal/buildinfo` 维护一个包级变量：
+
+- `version`
+
+默认值是 `dev`，构建时可以通过 `-ldflags -X ...` 覆盖。
+
+### JSON 输出
+
+`json` 和 `args` 命令都使用 JSON 文本作为外部交换格式：
+
+- `json <raw-json>`
+  解析任意合法 JSON，然后以紧凑格式重新输出
+- `args <arg...>`
+  把位置参数编码成 JSON 数组
+
+## 6. API 定义
+
+`cli-mock` 的外部接口只有 CLI，没有 HTTP API。
+
+核心命令面：
+
+- `mock version`
+- `mock sleep <duration>`
+- `mock echo <text...>`
+- `mock stderr <text...>`
+- `mock exit <code>`
+- `mock fail [message...]`
+- `mock json <raw-json>`
+- `mock args <arg...>`
+- `mock env <key>`
+- `mock stdin`
+- `mock lines <count>`
+- `mock stream <count> --interval <duration>`
+
+接口约定：
+
+- 大多数参数错误走 usage 退出码 `2`
+- 明确的模拟失败走退出码 `1`
+- `stdin` 不接收位置参数
+- `env` 要求目标变量存在
+- `lines` 和 `stream` 要求 `count > 0`
+- `sleep` 和 `stream --interval` 使用 Go duration 语法
+
+## 7. 开发要点
+
+- 新增子命令时，优先保持行为单一、输出稳定、易于脚本断言。
+- 对外错误信息尽量直接，避免模糊错误文本，因为测试通常会断言它们。
+- 如果新增命令改变用户可见行为，需要同步更新：
+  - `README.md`
+  - `CLAUDE.md`
+  - `internal/app/app_test.go`
+- `Execute` 是统一退出码出口，新增错误类型时不要绕开它。
+- 项目当前没有外部配置系统；不要引入与目标不匹配的复杂配置层。
+
+## 8. 开发流程
+
+本地开发常用命令：
+
+```bash
+go build -o ./mock ./cmd/mock
+go test ./...
+```
+
+修改 CLI 行为后，至少做以下验证：
+
+```bash
+./mock help
+./mock version
+./mock echo hello
+./mock fail broken
+./mock stream 2 --interval 10ms
+```
+
+如果修改了退出码、错误文本或帮助信息，优先补或改 `internal/app/app_test.go`，避免行为漂移。
+
+## 9. 已知约束与注意事项
+
+- 这是 mock 工具，不负责模拟复杂交互式 TTY 行为。
+- `stream` 通过 `time.Sleep` 实现，适合轻量测试，不适合高精度计时场景。
+- `json` 只做解析和紧凑输出，不保留原始格式或注释。
+- 本地依赖通过 `third_party/cobra` 固定；升级 Cobra 时要注意仓库内副本同步。
