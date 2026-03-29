@@ -80,6 +80,7 @@ func newRootCommand(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 		newStdinCommand(),
 		newLinesCommand(),
 		newStreamCommand(),
+		newXDGCommand(),
 	)
 
 	return cmd

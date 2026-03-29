@@ -2,6 +2,9 @@ package app
 
 import (
 	"bytes"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -124,6 +127,101 @@ func TestStreamHelp(t *testing.T) {
 	}
 }
 
+func TestXDGHelp(t *testing.T) {
+	t.Parallel()
+
+	result := runCommand(t, nil, "xdg", "--help")
+
+	if result.code != ExitSuccess {
+		t.Fatalf("expected exit %d, got %d", ExitSuccess, result.code)
+	}
+
+	want := "" +
+		"Usage:\n" +
+		"  mock xdg\n" +
+		"\n" +
+		"Description:\n" +
+		"  Create and inspect mock .config and .local trees under an explicit root.\n" +
+		"\n" +
+		"Available Commands:\n" +
+		"  apply      Create a mock XDG tree from a JSON manifest\n" +
+		"  inspect    Inspect a mock XDG tree as JSON\n" +
+		"  help       Help about any command\n" +
+		"\n" +
+		"Flags:\n" +
+		"  -h, --help         help for this command\n" +
+		"\n" +
+		"Examples:\n" +
+		"  mock xdg apply --root /tmp/mock-home --manifest ./manifest.json\n" +
+		"  mock xdg inspect --root /tmp/mock-home\n" +
+		"  mock xdg inspect --root /tmp/mock-home --reveal\n"
+
+	if result.stdout != want {
+		t.Fatalf("unexpected stdout:\nwant:\n%s\ngot:\n%s", want, result.stdout)
+	}
+}
+
+func TestXDGApplyHelp(t *testing.T) {
+	t.Parallel()
+
+	result := runCommand(t, nil, "xdg", "apply", "--help")
+
+	if result.code != ExitSuccess {
+		t.Fatalf("expected exit %d, got %d", ExitSuccess, result.code)
+	}
+
+	want := "" +
+		"Usage:\n" +
+		"  mock xdg apply [flags]\n" +
+		"\n" +
+		"Description:\n" +
+		"  Create .config and .local content under the provided root using a JSON manifest.\n" +
+		"\n" +
+		"Flags:\n" +
+		"  --manifest string  JSON manifest path or - for stdin\n" +
+		"  --overwrite bool   Overwrite existing files\n" +
+		"  --root string      Fake home root to manage\n" +
+		"  -h, --help         help for this command\n" +
+		"\n" +
+		"Examples:\n" +
+		"  mock xdg apply --root /tmp/mock-home --manifest ./manifest.json\n" +
+		"  mock xdg apply --root /tmp/mock-home --manifest - --overwrite\n"
+
+	if result.stdout != want {
+		t.Fatalf("unexpected stdout:\nwant:\n%s\ngot:\n%s", want, result.stdout)
+	}
+}
+
+func TestXDGInspectHelp(t *testing.T) {
+	t.Parallel()
+
+	result := runCommand(t, nil, "xdg", "inspect", "--help")
+
+	if result.code != ExitSuccess {
+		t.Fatalf("expected exit %d, got %d", ExitSuccess, result.code)
+	}
+
+	want := "" +
+		"Usage:\n" +
+		"  mock xdg inspect [flags]\n" +
+		"\n" +
+		"Description:\n" +
+		"  Inspect .config and .local metadata under the provided root and optionally reveal file content.\n" +
+		"\n" +
+		"Flags:\n" +
+		"  --reveal bool      Include readable text and JSON file content\n" +
+		"  --root string      Fake home root to inspect\n" +
+		"  -h, --help         help for this command\n" +
+		"\n" +
+		"Examples:\n" +
+		"  mock xdg inspect --root /tmp/mock-home\n" +
+		"  mock xdg inspect --root /tmp/mock-home --reveal\n"
+
+	if result.stdout != want {
+		t.Fatalf("unexpected stdout:\nwant:\n%s\ngot:\n%s", want, result.stdout)
+	}
+}
+
 func TestHelpCommandMatchesFlagHelp(t *testing.T) {
 	t.Parallel()
 
@@ -151,7 +249,7 @@ func TestExecuteVersion(t *testing.T) {
 	if result.code != ExitSuccess {
 		t.Fatalf("expected exit %d, got %d", ExitSuccess, result.code)
 	}
-	if result.stdout != "mock dev\n" {
+	if result.stdout != "mock dev (commit none, built unknown)\n" {
 		t.Fatalf("unexpected stdout: %q", result.stdout)
 	}
 }
@@ -451,6 +549,316 @@ func TestStreamCommandRejectsInvalidCount(t *testing.T) {
 	}
 }
 
+func TestXDGApplyCreatesTree(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join(t.TempDir(), "mock-home")
+	manifestPath := writeManifestFile(t, `{
+  "entries": [
+    {
+      "path": ".config/demo/config.toml",
+      "type": "file",
+      "format": "text",
+      "content": "token = \"demo\"\n"
+    },
+    {
+      "path": ".local/share/demo/secret.json",
+      "type": "file",
+      "format": "json",
+      "content": { "api_key": "demo-key" }
+    },
+    {
+      "path": ".local/state/demo",
+      "type": "dir",
+      "mode": "0700"
+    }
+  ]
+}`)
+
+	result := runCommand(t, nil, "xdg", "apply", "--root", root, "--manifest", manifestPath)
+
+	if result.code != ExitSuccess {
+		t.Fatalf("expected exit %d, got %d stderr=%q", ExitSuccess, result.code, result.stderr)
+	}
+	if result.stderr != "" {
+		t.Fatalf("expected empty stderr, got %q", result.stderr)
+	}
+	for _, want := range []string{
+		"root: " + root + "\n",
+		"created:\n- .config/demo/config.toml\n- .local/share/demo/secret.json\n- .local/state/demo\n",
+		"updated:\n-\n",
+		"HOME=" + root,
+		"XDG_CONFIG_HOME=" + filepath.Join(root, ".config"),
+		"XDG_DATA_HOME=" + filepath.Join(root, ".local", "share"),
+		"XDG_STATE_HOME=" + filepath.Join(root, ".local", "state"),
+	} {
+		if !strings.Contains(result.stdout, want) {
+			t.Fatalf("expected stdout to contain %q, got %q", want, result.stdout)
+		}
+	}
+
+	configContent, err := os.ReadFile(filepath.Join(root, ".config", "demo", "config.toml"))
+	if err != nil {
+		t.Fatalf("read config file: %v", err)
+	}
+	if string(configContent) != "token = \"demo\"\n" {
+		t.Fatalf("unexpected config content: %q", string(configContent))
+	}
+
+	secretContent, err := os.ReadFile(filepath.Join(root, ".local", "share", "demo", "secret.json"))
+	if err != nil {
+		t.Fatalf("read secret file: %v", err)
+	}
+	if string(secretContent) != "{\"api_key\":\"demo-key\"}\n" {
+		t.Fatalf("unexpected secret content: %q", string(secretContent))
+	}
+
+	configInfo, err := os.Stat(filepath.Join(root, ".config", "demo", "config.toml"))
+	if err != nil {
+		t.Fatalf("stat config file: %v", err)
+	}
+	if got := configInfo.Mode().Perm(); got != 0o644 {
+		t.Fatalf("unexpected config mode: %04o", got)
+	}
+
+	secretInfo, err := os.Stat(filepath.Join(root, ".local", "share", "demo", "secret.json"))
+	if err != nil {
+		t.Fatalf("stat secret file: %v", err)
+	}
+	if got := secretInfo.Mode().Perm(); got != 0o600 {
+		t.Fatalf("unexpected secret mode: %04o", got)
+	}
+
+	stateInfo, err := os.Stat(filepath.Join(root, ".local", "state"))
+	if err != nil {
+		t.Fatalf("stat state dir: %v", err)
+	}
+	if got := stateInfo.Mode().Perm(); got != 0o700 {
+		t.Fatalf("unexpected state mode: %04o", got)
+	}
+
+	demoStateInfo, err := os.Stat(filepath.Join(root, ".local", "state", "demo"))
+	if err != nil {
+		t.Fatalf("stat nested state dir: %v", err)
+	}
+	if got := demoStateInfo.Mode().Perm(); got != 0o700 {
+		t.Fatalf("unexpected nested state mode: %04o", got)
+	}
+}
+
+func TestXDGApplyRejectsInvalidPaths(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join(t.TempDir(), "mock-home")
+	tests := []struct {
+		name    string
+		entry   string
+		wantErr string
+	}{
+		{
+			name:    "absolute",
+			entry:   `{"path":"/tmp/nope","type":"file","format":"text","content":"x"}`,
+			wantErr: "must be relative",
+		},
+		{
+			name:    "traversal",
+			entry:   `{"path":"../.config/nope","type":"file","format":"text","content":"x"}`,
+			wantErr: "must not escape the root",
+		},
+		{
+			name:    "outside managed dirs",
+			entry:   `{"path":".cache/demo","type":"file","format":"text","content":"x"}`,
+			wantErr: "must start with .config/ or .local/",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			manifestPath := writeManifestFile(t, `{"entries":[`+tt.entry+`]}`)
+			result := runCommand(t, nil, "xdg", "apply", "--root", root, "--manifest", manifestPath)
+
+			if result.code != ExitUsage {
+				t.Fatalf("expected exit %d, got %d", ExitUsage, result.code)
+			}
+			if !strings.Contains(result.stderr, tt.wantErr) {
+				t.Fatalf("expected stderr to contain %q, got %q", tt.wantErr, result.stderr)
+			}
+		})
+	}
+}
+
+func TestXDGApplyRejectsExistingFileWithoutOverwrite(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join(t.TempDir(), "mock-home")
+	firstManifest := writeManifestFile(t, `{"entries":[{"path":".config/demo/config.toml","type":"file","format":"text","content":"first\n"}]}`)
+	secondManifest := writeManifestFile(t, `{"entries":[{"path":".config/demo/config.toml","type":"file","format":"text","content":"second\n"}]}`)
+
+	first := runCommand(t, nil, "xdg", "apply", "--root", root, "--manifest", firstManifest)
+	if first.code != ExitSuccess {
+		t.Fatalf("first apply failed: code=%d stderr=%q", first.code, first.stderr)
+	}
+
+	second := runCommand(t, nil, "xdg", "apply", "--root", root, "--manifest", secondManifest)
+	if second.code != ExitUsage {
+		t.Fatalf("expected exit %d, got %d", ExitUsage, second.code)
+	}
+	if !strings.Contains(second.stderr, "already exists; use --overwrite") {
+		t.Fatalf("unexpected stderr: %q", second.stderr)
+	}
+
+	content, err := os.ReadFile(filepath.Join(root, ".config", "demo", "config.toml"))
+	if err != nil {
+		t.Fatalf("read config file: %v", err)
+	}
+	if string(content) != "first\n" {
+		t.Fatalf("unexpected config content after failed overwrite: %q", string(content))
+	}
+}
+
+func TestXDGApplyOverwriteUpdatesExistingFile(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join(t.TempDir(), "mock-home")
+	firstManifest := writeManifestFile(t, `{"entries":[{"path":".config/demo/config.toml","type":"file","format":"text","content":"first\n"}]}`)
+	secondManifest := writeManifestFile(t, `{"entries":[{"path":".config/demo/config.toml","type":"file","format":"text","content":"second\n"}]}`)
+
+	first := runCommand(t, nil, "xdg", "apply", "--root", root, "--manifest", firstManifest)
+	if first.code != ExitSuccess {
+		t.Fatalf("first apply failed: code=%d stderr=%q", first.code, first.stderr)
+	}
+
+	second := runCommand(t, nil, "xdg", "apply", "--root", root, "--manifest", secondManifest, "--overwrite")
+	if second.code != ExitSuccess {
+		t.Fatalf("expected exit %d, got %d stderr=%q", ExitSuccess, second.code, second.stderr)
+	}
+	if !strings.Contains(second.stdout, "updated:\n- .config/demo/config.toml\n") {
+		t.Fatalf("expected updated section, got %q", second.stdout)
+	}
+
+	content, err := os.ReadFile(filepath.Join(root, ".config", "demo", "config.toml"))
+	if err != nil {
+		t.Fatalf("read config file: %v", err)
+	}
+	if string(content) != "second\n" {
+		t.Fatalf("unexpected config content after overwrite: %q", string(content))
+	}
+}
+
+func TestXDGInspectMetadataAndReveal(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join(t.TempDir(), "mock-home")
+	manifestPath := writeManifestFile(t, `{
+  "entries": [
+    {
+      "path": ".config/demo/config.toml",
+      "type": "file",
+      "format": "text",
+      "content": "token = \"demo\"\n"
+    },
+    {
+      "path": ".local/share/demo/secret.json",
+      "type": "file",
+      "format": "json",
+      "content": { "api_key": "demo-key" }
+    }
+  ]
+}`)
+
+	applied := runCommand(t, nil, "xdg", "apply", "--root", root, "--manifest", manifestPath)
+	if applied.code != ExitSuccess {
+		t.Fatalf("apply failed: code=%d stderr=%q", applied.code, applied.stderr)
+	}
+
+	inspect := runCommand(t, nil, "xdg", "inspect", "--root", root)
+	if inspect.code != ExitSuccess {
+		t.Fatalf("inspect failed: code=%d stderr=%q", inspect.code, inspect.stderr)
+	}
+
+	var metadata xdgInspectResponse
+	if err := json.Unmarshal([]byte(inspect.stdout), &metadata); err != nil {
+		t.Fatalf("unmarshal metadata inspect: %v", err)
+	}
+	if metadata.Root != root {
+		t.Fatalf("unexpected root: %q", metadata.Root)
+	}
+	if metadata.Reveal {
+		t.Fatalf("expected reveal=false, got true")
+	}
+	if len(metadata.Entries) == 0 {
+		t.Fatalf("expected inspect entries")
+	}
+	for _, entry := range metadata.Entries {
+		if entry.Content != nil {
+			t.Fatalf("expected hidden content in metadata inspect: %#v", entry)
+		}
+	}
+
+	revealed := runCommand(t, nil, "xdg", "inspect", "--root", root, "--reveal")
+	if revealed.code != ExitSuccess {
+		t.Fatalf("revealed inspect failed: code=%d stderr=%q", revealed.code, revealed.stderr)
+	}
+
+	var full xdgInspectResponse
+	if err := json.Unmarshal([]byte(revealed.stdout), &full); err != nil {
+		t.Fatalf("unmarshal revealed inspect: %v", err)
+	}
+
+	foundText := false
+	foundJSON := false
+	for _, entry := range full.Entries {
+		switch entry.Path {
+		case ".config/demo/config.toml":
+			foundText = true
+			if entry.Format != "text" {
+				t.Fatalf("expected text format, got %#v", entry)
+			}
+			content, ok := entry.Content.(string)
+			if !ok || content != "token = \"demo\"\n" {
+				t.Fatalf("unexpected text content: %#v", entry)
+			}
+		case ".local/share/demo/secret.json":
+			foundJSON = true
+			if entry.Format != "json" {
+				t.Fatalf("expected json format, got %#v", entry)
+			}
+			content, ok := entry.Content.(map[string]any)
+			if !ok {
+				t.Fatalf("unexpected json content type: %#v", entry)
+			}
+			if got, ok := content["api_key"].(string); !ok || got != "demo-key" {
+				t.Fatalf("unexpected json content: %#v", entry)
+			}
+		}
+	}
+	if !foundText || !foundJSON {
+		t.Fatalf("expected both revealed files, got %#v", full.Entries)
+	}
+}
+
+func TestXDGInspectHandlesMissingManagedDirs(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join(t.TempDir(), "missing-home")
+	result := runCommand(t, nil, "xdg", "inspect", "--root", root)
+
+	if result.code != ExitSuccess {
+		t.Fatalf("expected exit %d, got %d stderr=%q", ExitSuccess, result.code, result.stderr)
+	}
+
+	var inspect xdgInspectResponse
+	if err := json.Unmarshal([]byte(result.stdout), &inspect); err != nil {
+		t.Fatalf("unmarshal inspect output: %v", err)
+	}
+	if len(inspect.Entries) != 0 {
+		t.Fatalf("expected empty entries, got %#v", inspect.Entries)
+	}
+}
+
 type commandResult struct {
 	code   int
 	stdout string
@@ -473,4 +881,14 @@ func runCommand(t *testing.T, stdin *bytes.Buffer, args ...string) commandResult
 		stdout: stdout.String(),
 		stderr: stderr.String(),
 	}
+}
+
+func writeManifestFile(t *testing.T, content string) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "manifest.json")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	return path
 }

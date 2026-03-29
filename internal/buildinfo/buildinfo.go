@@ -2,8 +2,12 @@ package buildinfo
 
 import "fmt"
 
-var version = "dev"
+var (
+	Version   = "dev"
+	Commit    = "none"
+	BuildTime = "unknown"
+)
 
 func Summary() string {
-	return fmt.Sprintf("mock %s", version)
+	return fmt.Sprintf("mock %s (commit %s, built %s)", Version, Commit, BuildTime)
 }

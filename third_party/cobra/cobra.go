@@ -8,6 +8,10 @@ import (
 	"strings"
 )
 
+type boolFlag interface {
+	IsBoolFlag() bool
+}
+
 type PositionalArgs func(cmd *Command, args []string) error
 
 type CompletionOptions struct {
@@ -56,15 +60,6 @@ func (c *Command) AddCommand(children ...*Command) {
 			continue
 		}
 		child.parent = c
-		if child.in == nil {
-			child.in = c.InOrStdin()
-		}
-		if child.out == nil {
-			child.out = c.OutOrStdout()
-		}
-		if child.err == nil {
-			child.err = c.ErrOrStderr()
-		}
 		c.children = append(c.children, child)
 	}
 }
@@ -242,11 +237,15 @@ func (c *Command) parseFlags(args []string) ([]string, error) {
 			return nil, fmt.Errorf("unknown flag: --%s", name)
 		}
 		if !hasValue {
-			i++
-			if i >= len(args) {
-				return nil, fmt.Errorf("flag needs an argument: --%s", name)
+			if bf, ok := f.Value.(boolFlag); ok && bf.IsBoolFlag() {
+				value = "true"
+			} else {
+				i++
+				if i >= len(args) {
+					return nil, fmt.Errorf("flag needs an argument: --%s", name)
+				}
+				value = args[i]
 			}
-			value = args[i]
 		}
 		if err := f.Value.Set(value); err != nil {
 			return nil, err
