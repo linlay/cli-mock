@@ -13,6 +13,7 @@
 - 处理结构化和列表输出：`json`、`args`、`lines`
 - 读取运行环境：`env`、`stdin`
 - 生成带时间间隔的流式输出：`stream`
+- 输出标准化帮助文本：`help` / `<command> --help`
 
 ## 2. 技术栈
 
@@ -129,11 +130,14 @@
 - `env` 要求目标变量存在
 - `lines` 和 `stream` 要求 `count > 0`
 - `sleep` 和 `stream --interval` 使用 Go duration 语法
+- `stream` 在提供自定义内容时，内容条目数必须和 `count` 一致
+- 帮助输出使用统一 section 格式，按命令能力展示 `Description`、`Flags`、`Args fields`、`Params fields`、`Examples`
 
 ## 7. 开发要点
 
 - 新增子命令时，优先保持行为单一、输出稳定、易于脚本断言。
 - 对外错误信息尽量直接，避免模糊错误文本，因为测试通常会断言它们。
+- 新增或修改帮助文本时，优先复用统一帮助元数据，而不是在命令执行逻辑里手写输出。
 - 如果新增命令改变用户可见行为，需要同步更新：
   - `README.md`
   - `CLAUDE.md`
@@ -154,10 +158,12 @@ go test ./...
 
 ```bash
 ./mock help
+./mock stream --help
 ./mock version
 ./mock echo hello
 ./mock fail broken
 ./mock stream 2 --interval 10ms
+./mock stream 2 hello world --interval 10ms
 ```
 
 如果修改了退出码、错误文本或帮助信息，优先补或改 `internal/app/app_test.go`，避免行为漂移。

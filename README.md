@@ -27,6 +27,8 @@ go build -o ./mock ./cmd/mock
 ### 常用示例
 
 ```bash
+./mock help
+./mock stream --help
 ./mock echo hello world
 ./mock stderr warning message
 ./mock exit 7
@@ -35,6 +37,7 @@ printf 'first\nsecond\n' | ./mock stdin
 ./mock env HOME
 ./mock lines 3
 ./mock stream 3 --interval 100ms
+./mock stream 3 hello world done --interval 100ms
 ```
 
 ### 测试
@@ -56,7 +59,26 @@ go test ./...
 
 当前没有额外的外部配置目录、YAML 或 TOML 文件。
 
-## 4. 发布与分发
+## 4. 帮助输出格式
+
+`cli-mock` 的帮助输出使用统一的分段格式，方便脚本测试和文本断言。根据命令能力不同，帮助页会按需展示这些 section：
+
+- `Usage`
+- `Description`
+- `Available Commands`
+- `Flags`
+- `Args fields`
+- `Params fields`
+- `Examples`
+
+示例：
+
+```bash
+./mock stream --help
+./mock help env
+```
+
+## 5. 发布与分发
 
 当前仓库没有独立的发布脚本，默认分发方式是本地构建二进制：
 
@@ -70,11 +92,12 @@ go build -o ./mock ./cmd/mock
 go build -ldflags="-X github.com/linlay/cli-mock/internal/buildinfo.version=v0.1.0" -o ./mock ./cmd/mock
 ```
 
-## 5. 简单验证与排查
+## 6. 简单验证与排查
 
 ### 简单验证
 
 ```bash
+./mock help
 ./mock version
 ./mock echo hello
 ./mock json '{"name":"cli-mock"}'
@@ -86,11 +109,12 @@ printf 'demo\n' | ./mock stdin
 
 - 命令报 `unknown command`：先执行 `./mock help` 确认子命令名。
 - `sleep` 或 `stream --interval` 报 duration 错误：使用 Go duration 格式，例如 `20ms`、`1s`。
+- `stream` 传了自定义内容却失败：确认内容条目数和 `count` 完全一致。
 - `exit` 报参数非法：退出码必须在 `0` 到 `255` 之间。
 - `env` 失败：确认目标环境变量已经导出到当前 shell。
 - `json` 失败：传入的字符串必须是合法 JSON。
 
-## 6. 进一步阅读
+## 7. 进一步阅读
 
 - [CLAUDE.md](./CLAUDE.md)
   项目事实、架构分层和开发约定

@@ -14,9 +14,27 @@ type CompletionOptions struct {
 	DisableDefaultCmd bool
 }
 
+type HelpField struct {
+	Name        string
+	Type        string
+	Required    string
+	Default     string
+	Description string
+}
+
+type HelpSection struct {
+	Title string
+	Body  string
+}
+
 type Command struct {
 	Use               string
 	Short             string
+	Description       string
+	Example           string
+	ArgFields         []HelpField
+	ParamFields       []HelpField
+	HelpSections      []HelpSection
 	Args              PositionalArgs
 	RunE              func(cmd *Command, args []string) error
 	SilenceUsage      bool
@@ -244,40 +262,177 @@ func (c *Command) printHelp() error {
 
 func (c *Command) helpText() string {
 	var b strings.Builder
-	if c.CommandPath() != "" {
-		fmt.Fprintf(&b, "Usage:\n  %s", c.CommandPath())
-		if c.Name() != "" && c.Use != "" && len(strings.Fields(c.Use)) > 1 {
-			fmt.Fprintf(&b, " %s", strings.Join(strings.Fields(c.Use)[1:], " "))
-		}
-		b.WriteString("\n")
+
+	writeUsage(&b, c)
+	writeDescription(&b, c)
+	writeAvailableCommands(&b, c)
+	writeFlags(&b, c)
+	writeFieldSection(&b, "Args fields", c.ArgFields)
+	writeFieldSection(&b, "Params fields", c.ParamFields)
+	writeHelpSections(&b, c)
+	writeExamples(&b, c)
+
+	return b.String()
+}
+
+func writeUsage(b *strings.Builder, c *Command) {
+	if c.CommandPath() == "" {
+		return
 	}
-	if c.Short != "" {
-		fmt.Fprintf(&b, "\n%s\n", c.Short)
-	}
-	if len(c.children) > 0 {
-		b.WriteString("\nAvailable Commands:\n")
-		for _, child := range c.children {
-			fmt.Fprintf(&b, "  %-10s %s\n", child.Name(), child.Short)
-		}
-		if !c.CompletionOptions.DisableDefaultCmd {
-			b.WriteString("  completion Generate the autocompletion script\n")
-		}
-		b.WriteString("  help       Help about any command\n")
+
+	b.WriteString("Usage:\n")
+	fmt.Fprintf(b, "  %s", c.CommandPath())
+	if c.Name() != "" && c.Use != "" && len(strings.Fields(c.Use)) > 1 {
+		fmt.Fprintf(b, " %s", strings.Join(strings.Fields(c.Use)[1:], " "))
 	}
 	if c.flagSet != nil {
-		hasFlags := false
-		c.flagSet.VisitAll(func(f *flag.Flag) {
-			if !hasFlags {
-				b.WriteString("\nFlags:\n")
-				hasFlags = true
-			}
-			fmt.Fprintf(&b, "      --%s %s\n", f.Name, f.Usage)
-		})
-		if hasFlags {
-			b.WriteString("  -h, --help help for this command\n")
-		}
+		b.WriteString(" [flags]")
 	}
-	return b.String()
+	b.WriteString("\n")
+}
+
+func writeDescription(b *strings.Builder, c *Command) {
+	description := c.Description
+	if description == "" {
+		description = c.Short
+	}
+	if description == "" {
+		return
+	}
+
+	b.WriteString("\nDescription:\n")
+	writeIndentedBlock(b, description)
+}
+
+func writeAvailableCommands(b *strings.Builder, c *Command) {
+	if len(c.children) == 0 {
+		return
+	}
+
+	b.WriteString("\nAvailable Commands:\n")
+	for _, child := range c.children {
+		fmt.Fprintf(b, "  %-10s %s\n", child.Name(), child.Short)
+	}
+	if !c.CompletionOptions.DisableDefaultCmd {
+		b.WriteString("  completion Generate the autocompletion script\n")
+	}
+	b.WriteString("  help       Help about any command\n")
+}
+
+func writeFlags(b *strings.Builder, c *Command) {
+	b.WriteString("\nFlags:\n")
+
+	if c.flagSet != nil {
+		c.flagSet.VisitAll(func(f *flag.Flag) {
+			fmt.Fprintf(b, "  %-18s %s\n", formatFlagUsage(f), f.Usage)
+		})
+	}
+
+	b.WriteString("  -h, --help         help for this command\n")
+}
+
+func writeFieldSection(b *strings.Builder, title string, fields []HelpField) {
+	if len(fields) == 0 {
+		return
+	}
+
+	nameWidth := len("name")
+	typeWidth := len("type")
+	requiredWidth := len("required")
+	defaultWidth := len("default")
+
+	for _, field := range fields {
+		nameWidth = max(nameWidth, len(field.Name))
+		typeWidth = max(typeWidth, len(field.Type))
+		requiredWidth = max(requiredWidth, len(field.Required))
+		defaultWidth = max(defaultWidth, len(field.Default))
+	}
+
+	fmt.Fprintf(b, "\n%s:\n", title)
+	fmt.Fprintf(b, "  %-*s   %-*s   %-*s   %-*s   %s\n",
+		nameWidth, "name",
+		typeWidth, "type",
+		requiredWidth, "required",
+		defaultWidth, "default",
+		"description",
+	)
+
+	for _, field := range fields {
+		fmt.Fprintf(b, "  %-*s   %-*s   %-*s   %-*s   %s\n",
+			nameWidth, field.Name,
+			typeWidth, field.Type,
+			requiredWidth, field.Required,
+			defaultWidth, field.Default,
+			field.Description,
+		)
+	}
+}
+
+func writeHelpSections(b *strings.Builder, c *Command) {
+	for _, section := range c.HelpSections {
+		if strings.TrimSpace(section.Title) == "" || strings.TrimSpace(section.Body) == "" {
+			continue
+		}
+		fmt.Fprintf(b, "\n%s:\n", section.Title)
+		writeIndentedBlock(b, section.Body)
+	}
+}
+
+func writeExamples(b *strings.Builder, c *Command) {
+	if strings.TrimSpace(c.Example) == "" {
+		return
+	}
+
+	b.WriteString("\nExamples:\n")
+	writeIndentedBlock(b, c.Example)
+}
+
+func writeIndentedBlock(b *strings.Builder, body string) {
+	for _, line := range strings.Split(strings.TrimRight(body, "\n"), "\n") {
+		fmt.Fprintf(b, "  %s\n", line)
+	}
+}
+
+func formatFlagUsage(f *flag.Flag) string {
+	name := "--" + f.Name
+	typeName := flagTypeName(f)
+	if typeName == "" {
+		return name
+	}
+	return name + " " + typeName
+}
+
+func flagTypeName(f *flag.Flag) string {
+	if boolFlag, ok := f.Value.(interface{ IsBoolFlag() bool }); ok && boolFlag.IsBoolFlag() {
+		return "bool"
+	}
+
+	typeName := fmt.Sprintf("%T", f.Value)
+	switch {
+	case strings.HasSuffix(typeName, ".stringValue"):
+		return "string"
+	case strings.HasSuffix(typeName, ".intValue"):
+		return "int"
+	case strings.HasSuffix(typeName, ".int64Value"):
+		return "int64"
+	case strings.HasSuffix(typeName, ".uintValue"):
+		return "uint"
+	case strings.HasSuffix(typeName, ".uint64Value"):
+		return "uint64"
+	case strings.HasSuffix(typeName, ".float64Value"):
+		return "float"
+	case strings.HasSuffix(typeName, ".durationValue"):
+		return "duration"
+	default:
+		return ""
+	}
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func NoArgs(cmd *Command, args []string) error {

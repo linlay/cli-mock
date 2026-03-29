@@ -57,6 +57,7 @@ func newRootCommand(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "mock",
 		Short:         "Mock CLI for scripts and automation tests",
+		Description:   "Mock CLI for scripts and automation tests.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}

@@ -15,11 +15,131 @@ func TestExecuteHelp(t *testing.T) {
 	if result.code != ExitSuccess {
 		t.Fatalf("expected exit %d, got %d", ExitSuccess, result.code)
 	}
-	if !strings.Contains(result.stdout, "Mock CLI for scripts and automation tests") {
-		t.Fatalf("expected help output, got %q", result.stdout)
+	for _, want := range []string{
+		"Usage:\n  mock\n",
+		"Description:\n  Mock CLI for scripts and automation tests.\n",
+		"Available Commands:\n",
+		"  stream     Print lines with a delay between each line\n",
+		"Flags:\n  -h, --help         help for this command\n",
+	} {
+		if !strings.Contains(result.stdout, want) {
+			t.Fatalf("expected help output to contain %q, got %q", want, result.stdout)
+		}
 	}
 	if result.stderr != "" {
 		t.Fatalf("expected empty stderr, got %q", result.stderr)
+	}
+}
+
+func TestVersionHelp(t *testing.T) {
+	t.Parallel()
+
+	result := runCommand(t, nil, "version", "--help")
+
+	if result.code != ExitSuccess {
+		t.Fatalf("expected exit %d, got %d", ExitSuccess, result.code)
+	}
+
+	want := "" +
+		"Usage:\n" +
+		"  mock version\n" +
+		"\n" +
+		"Description:\n" +
+		"  Print the current mock CLI version string.\n" +
+		"\n" +
+		"Flags:\n" +
+		"  -h, --help         help for this command\n" +
+		"\n" +
+		"Examples:\n" +
+		"  mock version\n"
+
+	if result.stdout != want {
+		t.Fatalf("unexpected stdout:\nwant:\n%s\ngot:\n%s", want, result.stdout)
+	}
+}
+
+func TestEnvHelp(t *testing.T) {
+	t.Parallel()
+
+	result := runCommand(t, nil, "env", "--help")
+
+	if result.code != ExitSuccess {
+		t.Fatalf("expected exit %d, got %d", ExitSuccess, result.code)
+	}
+
+	want := "" +
+		"Usage:\n" +
+		"  mock env <key>\n" +
+		"\n" +
+		"Description:\n" +
+		"  Print the value of a single environment variable.\n" +
+		"\n" +
+		"Flags:\n" +
+		"  -h, --help         help for this command\n" +
+		"\n" +
+		"Args fields:\n" +
+		"  name   type     required   default   description\n" +
+		"  key    string   yes        -         Environment variable name to read\n" +
+		"\n" +
+		"Examples:\n" +
+		"  mock env HOME\n"
+
+	if result.stdout != want {
+		t.Fatalf("unexpected stdout:\nwant:\n%s\ngot:\n%s", want, result.stdout)
+	}
+}
+
+func TestStreamHelp(t *testing.T) {
+	t.Parallel()
+
+	result := runCommand(t, nil, "stream", "--help")
+
+	if result.code != ExitSuccess {
+		t.Fatalf("expected exit %d, got %d", ExitSuccess, result.code)
+	}
+
+	want := "" +
+		"Usage:\n" +
+		"  mock stream <count> [content...] [flags]\n" +
+		"\n" +
+		"Description:\n" +
+		"  Print numbered lines with a delay between each line, or emit custom content sequentially.\n" +
+		"\n" +
+		"Flags:\n" +
+		"  --interval string  Delay between streamed lines\n" +
+		"  -h, --help         help for this command\n" +
+		"\n" +
+		"Args fields:\n" +
+		"  name      type       required   default   description\n" +
+		"  count     integer    yes        -         Number of lines to print, must be greater than 0\n" +
+		"  content   string[]   no         -         Optional lines to emit in order; when provided, the number of items must equal count\n" +
+		"\n" +
+		"Examples:\n" +
+		"  mock stream 3\n" +
+		"  mock stream 3 --interval 100ms\n" +
+		"  mock stream 3 hello world done --interval 100ms\n"
+
+	if result.stdout != want {
+		t.Fatalf("unexpected stdout:\nwant:\n%s\ngot:\n%s", want, result.stdout)
+	}
+}
+
+func TestHelpCommandMatchesFlagHelp(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{"version", "env", "stream"} {
+		resultFromHelp := runCommand(t, nil, "help", name)
+		resultFromFlag := runCommand(t, nil, name, "--help")
+
+		if resultFromHelp.code != ExitSuccess {
+			t.Fatalf("expected help %s to exit %d, got %d", name, ExitSuccess, resultFromHelp.code)
+		}
+		if resultFromFlag.code != ExitSuccess {
+			t.Fatalf("expected %s --help to exit %d, got %d", name, ExitSuccess, resultFromFlag.code)
+		}
+		if resultFromHelp.stdout != resultFromFlag.stdout {
+			t.Fatalf("expected help outputs for %s to match\nhelp:\n%s\nflag:\n%s", name, resultFromHelp.stdout, resultFromFlag.stdout)
+		}
 	}
 }
 
@@ -271,6 +391,50 @@ func TestStreamCommand(t *testing.T) {
 	}
 	if elapsed < 25*time.Millisecond {
 		t.Fatalf("expected streaming delay, got %v", elapsed)
+	}
+}
+
+func TestStreamCommandWithCustomContent(t *testing.T) {
+	t.Parallel()
+
+	result := runCommand(t, nil, "stream", "3", "hello", "world", "done")
+
+	if result.code != ExitSuccess {
+		t.Fatalf("expected exit %d, got %d", ExitSuccess, result.code)
+	}
+	if result.stdout != "hello\nworld\ndone\n" {
+		t.Fatalf("unexpected stdout: %q", result.stdout)
+	}
+}
+
+func TestStreamCommandWithCustomContentDelay(t *testing.T) {
+	t.Parallel()
+
+	start := time.Now()
+	result := runCommand(t, nil, "stream", "3", "hello", "world", "done", "--interval", "15ms")
+	elapsed := time.Since(start)
+
+	if result.code != ExitSuccess {
+		t.Fatalf("expected exit %d, got %d", ExitSuccess, result.code)
+	}
+	if result.stdout != "hello\nworld\ndone\n" {
+		t.Fatalf("unexpected stdout: %q", result.stdout)
+	}
+	if elapsed < 25*time.Millisecond {
+		t.Fatalf("expected streaming delay, got %v", elapsed)
+	}
+}
+
+func TestStreamCommandRejectsMismatchedContentCount(t *testing.T) {
+	t.Parallel()
+
+	result := runCommand(t, nil, "stream", "3", "hello", "world")
+
+	if result.code != ExitUsage {
+		t.Fatalf("expected exit %d, got %d", ExitUsage, result.code)
+	}
+	if !strings.Contains(result.stderr, "does not match content item count") {
+		t.Fatalf("unexpected stderr: %q", result.stderr)
 	}
 }
 
