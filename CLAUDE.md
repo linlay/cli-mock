@@ -11,6 +11,7 @@
 - 输出到标准输出或标准错误：`echo`、`stderr`
 - 返回指定退出码或失败：`exit`、`fail`
 - 处理结构化和列表输出：`json`、`args`、`lines`
+- 提交 JSON 驱动的业务表单：`leave`、`expense`、`procurement`
 - 读取运行环境：`env`、`stdin`
 - 生成带时间间隔的流式输出：`stream`
 - 创建和读取 mock XDG 风格环境树：`xdg apply`、`xdg inspect`
@@ -149,6 +150,9 @@
 - `mock stdin`
 - `mock lines <count>`
 - `mock stream <count> --interval <duration>`
+- `mock leave --payload <json>`
+- `mock expense --payload <json>`
+- `mock procurement --payload <json>`
 - `mock xdg apply --root <dir> --manifest <path-or-> [--overwrite]`
 - `mock xdg inspect --root <dir> [--reveal]`
 
@@ -161,6 +165,9 @@
 - `lines` 和 `stream` 要求 `count > 0`
 - `sleep` 和 `stream --interval` 使用 Go duration 语法
 - `stream` 在提供自定义内容时，内容条目数必须和 `count` 一致
+- `leave`、`expense`、`procurement` 只接受 `--payload` 形式的 JSON object 输入
+- JSON 业务表单的语法/缺字段错误走 usage 退出码 `2`
+- JSON 业务表单的业务校验失败走退出码 `1`
 - `xdg apply` 只接受 JSON manifest，且只允许写入 `.config/**` 和 `.local/**`
 - `xdg inspect` 默认只暴露 metadata；只有 `--reveal` 才返回可读文本或 JSON 内容
 - `xdg` 子命令始终要求显式 `--root`，不会默认改写当前真实 home
@@ -169,6 +176,7 @@
 ## 7. 开发要点
 
 - 新增子命令时，优先保持行为单一、输出稳定、易于脚本断言。
+- 对复杂业务 mock，优先用单个 JSON payload 表达层级字段，而不是扩展大量 flags。
 - 对外错误信息尽量直接，避免模糊错误文本，因为测试通常会断言它们。
 - 新增或修改帮助文本时，优先复用统一帮助元数据，而不是在命令执行逻辑里手写输出。
 - 如果新增命令改变用户可见行为，需要同步更新：

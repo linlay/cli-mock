@@ -8,6 +8,7 @@
 - 返回指定退出码
 - 读取环境变量和标准输入
 - 生成 JSON、逐行输出和延迟流式输出
+- 通过 JSON payload 模拟较重的业务表单提交
 - 创建和检查可直接使用的 `.config` / `.local` mock 环境树
 
 如果你要看命令边界、目录分工和开发约定，请看 [CLAUDE.md](./CLAUDE.md)。
@@ -39,6 +40,9 @@ printf 'first\nsecond\n' | ./mock stdin
 ./mock lines 3
 ./mock stream 3 --interval 100ms
 ./mock stream 3 hello world done --interval 100ms
+./mock leave --payload '{"employee_id":"E1001","employee_name":"Lin","leave_type":"annual","start_date":"2026-04-20","end_date":"2026-04-22","days":3,"reason":"family_trip","handover_to":"E2001","urgent_contact":"13800138000"}'
+./mock expense --payload '{"employee_id":"E1001","department":"engineering","expense_type":"travel","currency":"CNY","total_amount":1280.5,"items":[{"category":"transport","amount":800,"invoice_id":"INV-001","occurred_on":"2026-04-10","description":"flight"},{"category":"hotel","amount":480.5,"invoice_id":"INV-002","occurred_on":"2026-04-11","description":"hotel"}],"submitted_at":"2026-04-14T10:30:00+08:00"}'
+./mock procurement --payload '{"requester_id":"E1001","department":"engineering","budget_code":"RD-2026-001","reason":"team expansion","delivery_city":"Shanghai","items":[{"name":"MacBook Pro","quantity":2,"unit_price":18999,"vendor":"Apple"}],"approvers":["MGR100","FIN200"],"requested_at":"2026-04-14T11:00:00+08:00"}'
 ./mock xdg apply --root /tmp/mock-home --manifest ./manifest.json
 ./mock xdg inspect --root /tmp/mock-home
 ```
@@ -55,6 +59,8 @@ go test ./...
 
 - 命令参数：
   `sleep`、`exit`、`lines`、`stream` 等命令通过位置参数控制行为。
+- JSON 业务表单：
+  `leave`、`expense`、`procurement` 通过 `--payload '<json>'` 接收结构化表单输入，并返回稳定 JSON 回执。
 - 环境变量：
   `env <key>` 会读取指定环境变量；变量不存在时返回退出码 `1`。
 - 标准输入：
@@ -177,6 +183,10 @@ printf 'demo\n' | ./mock stdin
 - 命令报 `unknown command`：先执行 `./mock help` 确认子命令名。
 - `sleep` 或 `stream --interval` 报 duration 错误：使用 Go duration 格式，例如 `20ms`、`1s`。
 - `stream` 传了自定义内容却失败：确认内容条目数和 `count` 完全一致。
+- `leave` / `expense` / `procurement` 报 `--payload is required`：确认传入了 `--payload '<json>'`。
+- JSON 表单命令报字段错误：确认顶层是 JSON object，必填字段齐全，日期格式分别使用 `YYYY-MM-DD` 或 RFC3339。
+- `expense` 报金额不匹配：确认 `total_amount` 等于所有 `items[].amount` 之和。
+- `procurement` 报 `budget exceeded`：当前 mock 会在采购总金额超过 `50000` 时返回业务失败。
 - `xdg apply` 报路径错误：确认 manifest 中的 `path` 是相对路径，并且以 `.config/` 或 `.local/` 开头。
 - `xdg apply` 报覆盖错误：已有文件默认不会覆盖，重写时加 `--overwrite`。
 - `xdg inspect` 输出里看不到文件内容：默认只返回 metadata，需要时加 `--reveal`。

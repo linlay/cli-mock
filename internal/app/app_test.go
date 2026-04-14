@@ -22,6 +22,10 @@ func TestExecuteHelp(t *testing.T) {
 		"Usage:\n  mock\n",
 		"Description:\n  Mock CLI for scripts and automation tests.\n",
 		"Available Commands:\n",
+		"  create-leave Create a mock leave application\n",
+		"  get-leave  Get a mock leave application\n",
+		"  update-expense Update a mock expense reimbursement\n",
+		"  delete-procurement Delete a mock procurement request\n",
 		"  stream     Print lines with a delay between each line\n",
 		"Flags:\n  -h, --help         help for this command\n",
 	} {
@@ -225,7 +229,7 @@ func TestXDGInspectHelp(t *testing.T) {
 func TestHelpCommandMatchesFlagHelp(t *testing.T) {
 	t.Parallel()
 
-	for _, name := range []string{"version", "env", "stream"} {
+	for _, name := range []string{"version", "env", "stream", "create-leave", "get-leave", "update-leave", "delete-leave", "create-expense", "get-expense", "update-expense", "delete-expense", "create-procurement", "get-procurement", "update-procurement", "delete-procurement"} {
 		resultFromHelp := runCommand(t, nil, "help", name)
 		resultFromFlag := runCommand(t, nil, name, "--help")
 
@@ -891,4 +895,20 @@ func writeManifestFile(t *testing.T, content string) string {
 		t.Fatalf("write manifest: %v", err)
 	}
 	return path
+}
+
+func mustJSONArg(t *testing.T, value any) string {
+	t.Helper()
+
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal JSON arg: %v", err)
+	}
+	return string(data)
+}
+
+func mustJSONLine(t *testing.T, value any) string {
+	t.Helper()
+
+	return mustJSONArg(t, value) + "\n"
 }

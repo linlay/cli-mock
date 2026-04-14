@@ -80,6 +80,18 @@ func newRootCommand(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 		newStdinCommand(),
 		newLinesCommand(),
 		newStreamCommand(),
+		newCreateLeaveCommand(),
+		newGetLeaveCommand(),
+		newUpdateLeaveCommand(),
+		newDeleteLeaveCommand(),
+		newCreateExpenseCommand(),
+		newGetExpenseCommand(),
+		newUpdateExpenseCommand(),
+		newDeleteExpenseCommand(),
+		newCreateProcurementCommand(),
+		newGetProcurementCommand(),
+		newUpdateProcurementCommand(),
+		newDeleteProcurementCommand(),
 		newXDGCommand(),
 	)
 
