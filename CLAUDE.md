@@ -11,7 +11,7 @@
 - 输出到标准输出或标准错误：`echo`、`stderr`
 - 返回指定退出码或失败：`exit`、`fail`
 - 处理结构化和列表输出：`json`、`args`、`lines`
-- 提交 JSON 驱动的业务表单：`leave`、`expense`、`procurement`
+- 通过无状态 CRUD 命令模拟 JSON 驱动的业务表单：请假、报销、采购
 - 读取运行环境：`env`、`stdin`
 - 生成带时间间隔的流式输出：`stream`
 - 创建和读取 mock XDG 风格环境树：`xdg apply`、`xdg inspect`
@@ -150,9 +150,18 @@
 - `mock stdin`
 - `mock lines <count>`
 - `mock stream <count> --interval <duration>`
-- `mock leave --payload <json>`
-- `mock expense --payload <json>`
-- `mock procurement --payload <json>`
+- `mock create-leave (--payload <json> | --payload-file <path> | --payload-stdin) [--result <submitted|approved|rejected>]`
+- `mock get-leave --request-id <id> [--result <found|not_found>]`
+- `mock update-leave (--payload <json> | --payload-file <path> | --payload-stdin) [--result <submitted|approved|rejected>]`
+- `mock delete-leave --request-id <id> [--result <deleted|not_found>]`
+- `mock create-expense (--payload <json> | --payload-file <path> | --payload-stdin) [--result <submitted|approved|rejected>]`
+- `mock get-expense --request-id <id> [--result <found|not_found>]`
+- `mock update-expense --request-id <id> (--payload <json> | --payload-file <path> | --payload-stdin) [--result <submitted|approved|rejected>]`
+- `mock delete-expense --request-id <id> [--result <deleted|not_found>]`
+- `mock create-procurement (--payload <json> | --payload-file <path> | --payload-stdin) [--result <submitted|approved|rejected>]`
+- `mock get-procurement --request-id <id> [--result <found|not_found>]`
+- `mock update-procurement --request-id <id> (--payload <json> | --payload-file <path> | --payload-stdin) [--result <submitted|approved|rejected>]`
+- `mock delete-procurement --request-id <id> [--result <deleted|not_found>]`
 - `mock xdg apply --root <dir> --manifest <path-or-> [--overwrite]`
 - `mock xdg inspect --root <dir> [--reveal]`
 
@@ -165,7 +174,11 @@
 - `lines` 和 `stream` 要求 `count > 0`
 - `sleep` 和 `stream --interval` 使用 Go duration 语法
 - `stream` 在提供自定义内容时，内容条目数必须和 `count` 一致
-- `leave`、`expense`、`procurement` 只接受 `--payload` 形式的 JSON object 输入
+- 业务 CRUD 命令是无状态 mock，不会持久化或跨命令共享真实数据
+- `create-*` / `update-*` 只允许从 `--payload`、`--payload-file`、`--payload-stdin` 中选择一种输入来源
+- `update-leave` 例外地要求 `request_id` 放在 payload 内
+- `get-*` / `delete-*` 按 `--request-id` 定位，且前缀必须匹配业务类型
+- `--result` 是正式公开接口，用来显式选择动作级 mock 状态
 - JSON 业务表单的语法/缺字段错误走 usage 退出码 `2`
 - JSON 业务表单的业务校验失败走退出码 `1`
 - `xdg apply` 只接受 JSON manifest，且只允许写入 `.config/**` 和 `.local/**`
@@ -176,7 +189,7 @@
 ## 7. 开发要点
 
 - 新增子命令时，优先保持行为单一、输出稳定、易于脚本断言。
-- 对复杂业务 mock，优先用单个 JSON payload 表达层级字段，而不是扩展大量 flags。
+- 对复杂业务 mock，优先用单个 JSON payload 表达层级字段，并在必要时提供有限的正式输入变体，例如 `--payload-file` 和 `--payload-stdin`。
 - 对外错误信息尽量直接，避免模糊错误文本，因为测试通常会断言它们。
 - 新增或修改帮助文本时，优先复用统一帮助元数据，而不是在命令执行逻辑里手写输出。
 - 如果新增命令改变用户可见行为，需要同步更新：
@@ -205,6 +218,10 @@ go test ./...
 ./mock fail broken
 ./mock stream 2 --interval 10ms
 ./mock stream 2 hello world --interval 10ms
+./mock create-leave --payload '{"employee_id":"E1001","employee_name":"Lin","leave_type":"annual","start_date":"2026-04-20","end_date":"2026-04-22","days":3,"reason":"family_trip","handover_to":"E2001","urgent_contact":"13800138000"}'
+./mock create-expense --payload-file ./expense.json --result approved
+printf '{"request_id":"LV-7B0A3D4F10","employee_id":"E1001","employee_name":"Lin","leave_type":"annual","start_date":"2026-04-21","end_date":"2026-04-23","days":3,"reason":"family_trip","handover_to":"E2001","urgent_contact":"13800138000"}' | ./mock update-leave --payload-stdin --result rejected
+./mock get-procurement --request-id PR-BA08D42C31 --result found
 ./mock xdg apply --root /tmp/mock-home --manifest ./manifest.json
 ./mock xdg inspect --root /tmp/mock-home --reveal
 ```
