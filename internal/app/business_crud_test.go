@@ -170,6 +170,26 @@ func TestBusinessRuleFailuresRemain(t *testing.T) {
 		assertBusinessFailureContains(t, result, "start_date must be on or before end_date")
 	})
 
+	t.Run("leave supports half day", func(t *testing.T) {
+		t.Parallel()
+
+		payload := sampleLeavePayload()
+		payload.Days = 0.5
+
+		result := runCommand(t, nil, "create-leave", "--payload", mustJSONArg(t, payload))
+		assertActionSuccess(t, result, "leave", "create", "submitted", "LV-")
+	})
+
+	t.Run("leave rejects non-positive days", func(t *testing.T) {
+		t.Parallel()
+
+		payload := sampleLeavePayload()
+		payload.Days = 0
+
+		result := runCommand(t, nil, "create-leave", "--payload", mustJSONArg(t, payload))
+		assertBusinessFailureContains(t, result, "leave days must be greater than 0")
+	})
+
 	t.Run("expense total mismatch", func(t *testing.T) {
 		t.Parallel()
 
@@ -178,6 +198,18 @@ func TestBusinessRuleFailuresRemain(t *testing.T) {
 
 		result := runCommand(t, nil, "create-expense", "--payload", mustJSONArg(t, payload))
 		assertBusinessFailureContains(t, result, "does not match item amount sum")
+	})
+
+	t.Run("expense rejects legacy flat payload fields", func(t *testing.T) {
+		t.Parallel()
+
+		result := runCommand(t, nil, "create-expense", "--payload", `{"employee_id":"E1001","department":"engineering","expense_type":"travel","currency":"CNY","total_amount":1280.5,"items":[{"category":"transport","amount":800,"invoice_id":"INV-001","occurred_on":"2026-04-10","description":"flight"}],"submitted_at":"2026-04-14T10:30:00+08:00"}`)
+		if result.code != ExitUsage {
+			t.Fatalf("expected exit %d, got %d stderr=%q", ExitUsage, result.code, result.stderr)
+		}
+		if !strings.Contains(result.stderr, `unknown field "employee_id"`) {
+			t.Fatalf("expected legacy field rejection, got %q", result.stderr)
+		}
 	})
 
 	t.Run("procurement budget exceeded", func(t *testing.T) {
@@ -190,6 +222,18 @@ func TestBusinessRuleFailuresRemain(t *testing.T) {
 		result := runCommand(t, nil, "create-procurement", "--payload", mustJSONArg(t, payload))
 		assertBusinessFailureContains(t, result, "budget exceeded")
 	})
+}
+
+func TestLeaveRejectsUnknownLegacyField(t *testing.T) {
+	t.Parallel()
+
+	result := runCommand(t, nil, "create-leave", "--payload", `{"applicant_id":"E1001","department_id":"engineering","leave_type":"annual","start_date":"2026-04-20","end_date":"2026-04-22","days":1,"reason":"family_trip","employee_name":"Lin"}`)
+	if result.code != ExitUsage {
+		t.Fatalf("expected exit %d, got %d stderr=%q", ExitUsage, result.code, result.stderr)
+	}
+	if !strings.Contains(result.stderr, `unknown field "employee_name"`) {
+		t.Fatalf("expected unknown employee_name rejection, got %q", result.stderr)
+	}
 }
 
 func TestCreateLeaveRequestIDIsStable(t *testing.T) {
@@ -210,22 +254,26 @@ func TestCreateLeaveRequestIDIsStable(t *testing.T) {
 
 func sampleLeavePayload() leavePayload {
 	return leavePayload{
-		EmployeeID:    "E1001",
-		EmployeeName:  "Lin",
-		LeaveType:     "annual",
-		StartDate:     "2026-04-20",
-		EndDate:       "2026-04-22",
-		Days:          3,
-		Reason:        "family_trip",
-		HandoverTo:    "E2001",
-		UrgentContact: "13800138000",
+		ApplicantID:  "E1001",
+		DepartmentID: "engineering",
+		LeaveType:    "annual",
+		StartDate:    "2026-04-20",
+		EndDate:      "2026-04-22",
+		Days:         3,
+		Reason:       "family_trip",
 	}
 }
 
 func sampleExpensePayload() expensePayload {
 	return expensePayload{
-		EmployeeID:  "E1001",
-		Department:  "engineering",
+		Employee: expenseEmployee{
+			ID:   "E1001",
+			Name: "张三",
+		},
+		Department: expenseDepartment{
+			Code: "engineering",
+			Name: "工程部",
+		},
 		ExpenseType: "travel",
 		Currency:    "CNY",
 		TotalAmount: 1280.5,

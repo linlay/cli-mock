@@ -29,26 +29,34 @@ type payloadInputOptions struct {
 }
 
 type leavePayload struct {
-	RequestID     string `json:"request_id,omitempty"`
-	EmployeeID    string `json:"employee_id"`
-	EmployeeName  string `json:"employee_name"`
-	LeaveType     string `json:"leave_type"`
-	StartDate     string `json:"start_date"`
-	EndDate       string `json:"end_date"`
-	Days          int    `json:"days"`
-	Reason        string `json:"reason"`
-	HandoverTo    string `json:"handover_to"`
-	UrgentContact string `json:"urgent_contact"`
+	RequestID    string  `json:"request_id,omitempty"`
+	ApplicantID  string  `json:"applicant_id"`
+	DepartmentID string  `json:"department_id"`
+	LeaveType    string  `json:"leave_type"`
+	StartDate    string  `json:"start_date"`
+	EndDate      string  `json:"end_date"`
+	Days         float64 `json:"days"`
+	Reason       string  `json:"reason"`
 }
 
 type expensePayload struct {
-	EmployeeID  string            `json:"employee_id"`
-	Department  string            `json:"department"`
+	Employee    expenseEmployee   `json:"employee"`
+	Department  expenseDepartment `json:"department"`
 	ExpenseType string            `json:"expense_type"`
 	Currency    string            `json:"currency"`
 	TotalAmount float64           `json:"total_amount"`
 	Items       []expenseLineItem `json:"items"`
 	SubmittedAt string            `json:"submitted_at"`
+}
+
+type expenseEmployee struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type expenseDepartment struct {
+	Code string `json:"code"`
+	Name string `json:"name"`
 }
 
 type expenseLineItem struct {
@@ -88,25 +96,24 @@ type actionResponse struct {
 }
 
 type leaveSummary struct {
-	EmployeeID   string `json:"employee_id"`
-	EmployeeName string `json:"employee_name"`
-	LeaveType    string `json:"leave_type"`
-	StartDate    string `json:"start_date"`
-	EndDate      string `json:"end_date"`
-	Days         int    `json:"days"`
-	Reason       string `json:"reason"`
-	HandoverTo   string `json:"handover_to"`
+	ApplicantID  string  `json:"applicant_id"`
+	DepartmentID string  `json:"department_id"`
+	LeaveType    string  `json:"leave_type"`
+	StartDate    string  `json:"start_date"`
+	EndDate      string  `json:"end_date"`
+	Days         float64 `json:"days"`
+	Reason       string  `json:"reason"`
 }
 
 type expenseSummary struct {
-	EmployeeID     string  `json:"employee_id"`
-	Department     string  `json:"department"`
-	ExpenseType    string  `json:"expense_type"`
-	Currency       string  `json:"currency"`
-	TotalAmount    float64 `json:"total_amount"`
-	ItemCount      int     `json:"item_count"`
-	SubmittedAt    string  `json:"submitted_at"`
-	PrimaryInvoice string  `json:"primary_invoice"`
+	Employee       expenseEmployee   `json:"employee"`
+	Department     expenseDepartment `json:"department"`
+	ExpenseType    string            `json:"expense_type"`
+	Currency       string            `json:"currency"`
+	TotalAmount    float64           `json:"total_amount"`
+	ItemCount      int               `json:"item_count"`
+	SubmittedAt    string            `json:"submitted_at"`
+	PrimaryInvoice string            `json:"primary_invoice"`
 }
 
 type procurementSummary struct {
@@ -122,23 +129,21 @@ type procurementSummary struct {
 }
 
 type leaveRecord struct {
-	RequestID     string `json:"request_id"`
-	EmployeeID    string `json:"employee_id"`
-	EmployeeName  string `json:"employee_name"`
-	LeaveType     string `json:"leave_type"`
-	StartDate     string `json:"start_date"`
-	EndDate       string `json:"end_date"`
-	Days          int    `json:"days"`
-	Reason        string `json:"reason"`
-	HandoverTo    string `json:"handover_to"`
-	UrgentContact string `json:"urgent_contact"`
-	Status        string `json:"status"`
+	RequestID    string  `json:"request_id"`
+	ApplicantID  string  `json:"applicant_id"`
+	DepartmentID string  `json:"department_id"`
+	LeaveType    string  `json:"leave_type"`
+	StartDate    string  `json:"start_date"`
+	EndDate      string  `json:"end_date"`
+	Days         float64 `json:"days"`
+	Reason       string  `json:"reason"`
+	Status       string  `json:"status"`
 }
 
 type expenseRecord struct {
 	RequestID   string            `json:"request_id"`
-	EmployeeID  string            `json:"employee_id"`
-	Department  string            `json:"department"`
+	Employee    expenseEmployee   `json:"employee"`
+	Department  expenseDepartment `json:"department"`
 	ExpenseType string            `json:"expense_type"`
 	Currency    string            `json:"currency"`
 	TotalAmount float64           `json:"total_amount"`
@@ -168,9 +173,9 @@ func newCreateLeaveCommand() *cobra.Command {
 		Use:         "create-leave",
 		Short:       "Create a mock leave application",
 		Description: "Validate and create a mock leave application from JSON input.",
-		Example: "mock create-leave --payload '{\"employee_id\":\"E1001\",\"employee_name\":\"Lin\",\"leave_type\":\"annual\",\"start_date\":\"2026-04-20\",\"end_date\":\"2026-04-22\",\"days\":3,\"reason\":\"family_trip\",\"handover_to\":\"E2001\",\"urgent_contact\":\"13800138000\"}'\n" +
+		Example: "mock create-leave --payload '{\"applicant_id\":\"E1001\",\"department_id\":\"engineering\",\"leave_type\":\"annual\",\"start_date\":\"2026-04-20\",\"end_date\":\"2026-04-22\",\"days\":2.5,\"reason\":\"family_trip\"}'\n" +
 			"mock create-leave --payload-file ./leave.json --result approved\n" +
-			"printf '{\"employee_id\":\"E1001\",\"employee_name\":\"Lin\",\"leave_type\":\"annual\",\"start_date\":\"2026-04-20\",\"end_date\":\"2026-04-22\",\"days\":3,\"reason\":\"family_trip\",\"handover_to\":\"E2001\",\"urgent_contact\":\"13800138000\"}' | mock create-leave --payload-stdin --result rejected",
+			"printf '{\"applicant_id\":\"E1001\",\"department_id\":\"engineering\",\"leave_type\":\"annual\",\"start_date\":\"2026-04-20\",\"end_date\":\"2026-04-22\",\"days\":2.5,\"reason\":\"family_trip\"}' | mock create-leave --payload-stdin --result rejected",
 		Args: cobra.NoArgs,
 		ParamFields: append(
 			payloadSourceFields("leave request"),
@@ -259,9 +264,9 @@ func newUpdateLeaveCommand() *cobra.Command {
 		Use:         "update-leave",
 		Short:       "Update a mock leave application",
 		Description: "Validate and update a mock leave application from JSON input.",
-		Example: "mock update-leave --payload '{\"request_id\":\"LV-7B0A3D4F10\",\"employee_id\":\"E1001\",\"employee_name\":\"Lin\",\"leave_type\":\"annual\",\"start_date\":\"2026-04-21\",\"end_date\":\"2026-04-23\",\"days\":3,\"reason\":\"family_trip\",\"handover_to\":\"E2001\",\"urgent_contact\":\"13800138000\"}'\n" +
+		Example: "mock update-leave --payload '{\"request_id\":\"LV-7B0A3D4F10\",\"applicant_id\":\"E1001\",\"department_id\":\"engineering\",\"leave_type\":\"annual\",\"start_date\":\"2026-04-21\",\"end_date\":\"2026-04-23\",\"days\":2.5,\"reason\":\"family_trip\"}'\n" +
 			"mock update-leave --payload-file ./leave-update.json --result approved\n" +
-			"printf '{\"request_id\":\"LV-7B0A3D4F10\",\"employee_id\":\"E1001\",\"employee_name\":\"Lin\",\"leave_type\":\"personal\",\"start_date\":\"2026-04-21\",\"end_date\":\"2026-04-22\",\"days\":2,\"reason\":\"family_trip\",\"handover_to\":\"E2001\",\"urgent_contact\":\"13800138000\"}' | mock update-leave --payload-stdin --result rejected",
+			"printf '{\"request_id\":\"LV-7B0A3D4F10\",\"applicant_id\":\"E1001\",\"department_id\":\"engineering\",\"leave_type\":\"personal\",\"start_date\":\"2026-04-21\",\"end_date\":\"2026-04-22\",\"days\":2,\"reason\":\"family_trip\"}' | mock update-leave --payload-stdin --result rejected",
 		Args: cobra.NoArgs,
 		ParamFields: append(
 			payloadSourceFields("leave update payload including request_id"),
@@ -345,9 +350,9 @@ func newCreateExpenseCommand() *cobra.Command {
 		Use:         "create-expense",
 		Short:       "Create a mock expense reimbursement",
 		Description: "Validate and create a mock expense reimbursement from JSON input.",
-		Example: "mock create-expense --payload '{\"employee_id\":\"E1001\",\"department\":\"engineering\",\"expense_type\":\"travel\",\"currency\":\"CNY\",\"total_amount\":1280.5,\"items\":[{\"category\":\"transport\",\"amount\":800,\"invoice_id\":\"INV-001\",\"occurred_on\":\"2026-04-10\",\"description\":\"flight\"},{\"category\":\"hotel\",\"amount\":480.5,\"invoice_id\":\"INV-002\",\"occurred_on\":\"2026-04-11\",\"description\":\"hotel\"}],\"submitted_at\":\"2026-04-14T10:30:00+08:00\"}'\n" +
+		Example: "mock create-expense --payload '{\"employee\":{\"id\":\"E1001\",\"name\":\"张三\"},\"department\":{\"code\":\"engineering\",\"name\":\"工程部\"},\"expense_type\":\"travel\",\"currency\":\"CNY\",\"total_amount\":1280.5,\"items\":[{\"category\":\"transport\",\"amount\":800,\"invoice_id\":\"INV-001\",\"occurred_on\":\"2026-04-10\",\"description\":\"flight\"},{\"category\":\"hotel\",\"amount\":480.5,\"invoice_id\":\"INV-002\",\"occurred_on\":\"2026-04-11\",\"description\":\"hotel\"}],\"submitted_at\":\"2026-04-14T10:30:00+08:00\"}'\n" +
 			"mock create-expense --payload-file ./expense.json --result approved\n" +
-			"printf '{\"employee_id\":\"E1001\",\"department\":\"engineering\",\"expense_type\":\"travel\",\"currency\":\"CNY\",\"total_amount\":1280.5,\"items\":[{\"category\":\"transport\",\"amount\":800,\"invoice_id\":\"INV-001\",\"occurred_on\":\"2026-04-10\",\"description\":\"flight\"},{\"category\":\"hotel\",\"amount\":480.5,\"invoice_id\":\"INV-002\",\"occurred_on\":\"2026-04-11\",\"description\":\"hotel\"}],\"submitted_at\":\"2026-04-14T10:30:00+08:00\"}' | mock create-expense --payload-stdin --result rejected",
+			"printf '{\"employee\":{\"id\":\"E1001\",\"name\":\"张三\"},\"department\":{\"code\":\"engineering\",\"name\":\"工程部\"},\"expense_type\":\"travel\",\"currency\":\"CNY\",\"total_amount\":1280.5,\"items\":[{\"category\":\"transport\",\"amount\":800,\"invoice_id\":\"INV-001\",\"occurred_on\":\"2026-04-10\",\"description\":\"flight\"},{\"category\":\"hotel\",\"amount\":480.5,\"invoice_id\":\"INV-002\",\"occurred_on\":\"2026-04-11\",\"description\":\"hotel\"}],\"submitted_at\":\"2026-04-14T10:30:00+08:00\"}' | mock create-expense --payload-stdin --result rejected",
 		Args: cobra.NoArgs,
 		ParamFields: append(
 			payloadSourceFields("expense request"),
@@ -437,9 +442,9 @@ func newUpdateExpenseCommand() *cobra.Command {
 		Use:         "update-expense",
 		Short:       "Update a mock expense reimbursement",
 		Description: "Validate and update a mock expense reimbursement from JSON input.",
-		Example: "mock update-expense --request-id EX-14C0A7B992 --payload '{\"employee_id\":\"E1001\",\"department\":\"engineering\",\"expense_type\":\"travel\",\"currency\":\"CNY\",\"total_amount\":1280.5,\"items\":[{\"category\":\"transport\",\"amount\":800,\"invoice_id\":\"INV-001\",\"occurred_on\":\"2026-04-10\",\"description\":\"flight\"},{\"category\":\"hotel\",\"amount\":480.5,\"invoice_id\":\"INV-002\",\"occurred_on\":\"2026-04-11\",\"description\":\"hotel\"}],\"submitted_at\":\"2026-04-14T10:30:00+08:00\"}'\n" +
+		Example: "mock update-expense --request-id EX-14C0A7B992 --payload '{\"employee\":{\"id\":\"E1001\",\"name\":\"张三\"},\"department\":{\"code\":\"engineering\",\"name\":\"工程部\"},\"expense_type\":\"travel\",\"currency\":\"CNY\",\"total_amount\":1280.5,\"items\":[{\"category\":\"transport\",\"amount\":800,\"invoice_id\":\"INV-001\",\"occurred_on\":\"2026-04-10\",\"description\":\"flight\"},{\"category\":\"hotel\",\"amount\":480.5,\"invoice_id\":\"INV-002\",\"occurred_on\":\"2026-04-11\",\"description\":\"hotel\"}],\"submitted_at\":\"2026-04-14T10:30:00+08:00\"}'\n" +
 			"mock update-expense --request-id EX-14C0A7B992 --payload-file ./expense-update.json --result approved\n" +
-			"printf '{\"employee_id\":\"E1001\",\"department\":\"engineering\",\"expense_type\":\"travel\",\"currency\":\"CNY\",\"total_amount\":1280.5,\"items\":[{\"category\":\"transport\",\"amount\":800,\"invoice_id\":\"INV-001\",\"occurred_on\":\"2026-04-10\",\"description\":\"flight\"},{\"category\":\"hotel\",\"amount\":480.5,\"invoice_id\":\"INV-002\",\"occurred_on\":\"2026-04-11\",\"description\":\"hotel\"}],\"submitted_at\":\"2026-04-14T10:30:00+08:00\"}' | mock update-expense --request-id EX-14C0A7B992 --payload-stdin --result rejected",
+			"printf '{\"employee\":{\"id\":\"E1001\",\"name\":\"张三\"},\"department\":{\"code\":\"engineering\",\"name\":\"工程部\"},\"expense_type\":\"travel\",\"currency\":\"CNY\",\"total_amount\":1280.5,\"items\":[{\"category\":\"transport\",\"amount\":800,\"invoice_id\":\"INV-001\",\"occurred_on\":\"2026-04-10\",\"description\":\"flight\"},{\"category\":\"hotel\",\"amount\":480.5,\"invoice_id\":\"INV-002\",\"occurred_on\":\"2026-04-11\",\"description\":\"hotel\"}],\"submitted_at\":\"2026-04-14T10:30:00+08:00\"}' | mock update-expense --request-id EX-14C0A7B992 --payload-stdin --result rejected",
 		Args: cobra.NoArgs,
 		ParamFields: append(
 			[]cobra.HelpField{
@@ -846,14 +851,12 @@ func validateLeaveRequired(payload leavePayload, requireRequestID bool) error {
 		value string
 		name  string
 	}{
-		{payload.EmployeeID, "employee_id"},
-		{payload.EmployeeName, "employee_name"},
+		{payload.ApplicantID, "applicant_id"},
+		{payload.DepartmentID, "department_id"},
 		{payload.LeaveType, "leave_type"},
 		{payload.StartDate, "start_date"},
 		{payload.EndDate, "end_date"},
 		{payload.Reason, "reason"},
-		{payload.HandoverTo, "handover_to"},
-		{payload.UrgentContact, "urgent_contact"},
 	}
 	for _, field := range required {
 		if strings.TrimSpace(field.value) == "" {
@@ -892,8 +895,10 @@ func validateExpenseRequired(payload expensePayload) error {
 		value string
 		name  string
 	}{
-		{payload.EmployeeID, "employee_id"},
-		{payload.Department, "department"},
+		{payload.Employee.ID, "employee.id"},
+		{payload.Employee.Name, "employee.name"},
+		{payload.Department.Code, "department.code"},
+		{payload.Department.Name, "department.name"},
 		{payload.ExpenseType, "expense_type"},
 		{payload.Currency, "currency"},
 		{payload.SubmittedAt, "submitted_at"},
@@ -1061,20 +1066,19 @@ func validateRequestID(raw, prefix, field string) (string, error) {
 
 func buildLeaveSummary(payload leavePayload) leaveSummary {
 	return leaveSummary{
-		EmployeeID:   payload.EmployeeID,
-		EmployeeName: payload.EmployeeName,
+		ApplicantID:  payload.ApplicantID,
+		DepartmentID: payload.DepartmentID,
 		LeaveType:    payload.LeaveType,
 		StartDate:    payload.StartDate,
 		EndDate:      payload.EndDate,
 		Days:         payload.Days,
 		Reason:       payload.Reason,
-		HandoverTo:   payload.HandoverTo,
 	}
 }
 
 func buildExpenseSummary(payload expensePayload) expenseSummary {
 	return expenseSummary{
-		EmployeeID:     payload.EmployeeID,
+		Employee:       payload.Employee,
 		Department:     payload.Department,
 		ExpenseType:    payload.ExpenseType,
 		Currency:       payload.Currency,
@@ -1101,25 +1105,29 @@ func buildProcurementSummary(payload procurementPayload) procurementSummary {
 
 func mockLeaveRecord(requestID string) leaveRecord {
 	return leaveRecord{
-		RequestID:     requestID,
-		EmployeeID:    "E1001",
-		EmployeeName:  "Lin",
-		LeaveType:     "annual",
-		StartDate:     "2026-04-20",
-		EndDate:       "2026-04-22",
-		Days:          3,
-		Reason:        "family_trip",
-		HandoverTo:    "E2001",
-		UrgentContact: "13800138000",
-		Status:        "submitted",
+		RequestID:    requestID,
+		ApplicantID:  "E1001",
+		DepartmentID: "engineering",
+		LeaveType:    "annual",
+		StartDate:    "2026-04-20",
+		EndDate:      "2026-04-22",
+		Days:         3,
+		Reason:       "family_trip",
+		Status:       "submitted",
 	}
 }
 
 func mockExpenseRecord(requestID string) expenseRecord {
 	return expenseRecord{
-		RequestID:   requestID,
-		EmployeeID:  "E1001",
-		Department:  "engineering",
+		RequestID: requestID,
+		Employee: expenseEmployee{
+			ID:   "E1001",
+			Name: "张三",
+		},
+		Department: expenseDepartment{
+			Code: "engineering",
+			Name: "工程部",
+		},
 		ExpenseType: "travel",
 		Currency:    "CNY",
 		TotalAmount: 1280.5,
