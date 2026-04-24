@@ -18,7 +18,7 @@ func TestCreateLeaveSupportsPayloadSources(t *testing.T) {
 		t.Parallel()
 
 		result := runCommand(t, nil, "create-leave", "--payload", mustJSONArg(t, payload))
-		assertActionSuccess(t, result, "leave", "create", "submitted", "LV-")
+		assertTextActionSuccess(t, result, "leave", "create", "submitted", "LV-")
 	})
 
 	t.Run("payload file approved", func(t *testing.T) {
@@ -26,7 +26,7 @@ func TestCreateLeaveSupportsPayloadSources(t *testing.T) {
 
 		payloadPath := writeJSONFile(t, payload)
 		result := runCommand(t, nil, "create-leave", "--payload-file", payloadPath, "--result", "approved")
-		assertActionSuccess(t, result, "leave", "create", "approved", "LV-")
+		assertTextActionSuccess(t, result, "leave", "create", "approved", "LV-")
 	})
 
 	t.Run("payload stdin rejected", func(t *testing.T) {
@@ -34,7 +34,7 @@ func TestCreateLeaveSupportsPayloadSources(t *testing.T) {
 
 		stdin := bytes.NewBufferString(mustJSONArg(t, payload))
 		result := runCommand(t, stdin, "create-leave", "--payload-stdin", "--result", "rejected")
-		assertActionSuccess(t, result, "leave", "create", "rejected", "LV-")
+		assertTextActionSuccess(t, result, "leave", "create", "rejected", "LV-")
 	})
 }
 
@@ -45,16 +45,16 @@ func TestUpdateCommandsSupportNonPayloadSources(t *testing.T) {
 		t.Parallel()
 
 		payloadPath := writeJSONFile(t, sampleExpensePayload())
-		result := runCommand(t, nil, "update-expense", "--request-id", "EX-14C0A7B992", "--payload-file", payloadPath, "--result", "approved")
-		assertActionSuccess(t, result, "expense", "update", "approved", "EX-")
+		result := runCommand(t, nil, "expense", "update", "--request-id", "EX-14C0A7B992", "--payload-file", payloadPath, "--result", "approved")
+		assertTextActionSuccess(t, result, "expense", "update", "approved", "EX-")
 	})
 
 	t.Run("update procurement with payload stdin", func(t *testing.T) {
 		t.Parallel()
 
 		stdin := bytes.NewBufferString(mustJSONArg(t, sampleProcurementPayload()))
-		result := runCommand(t, stdin, "update-procurement", "--request-id", "PR-BA08D42C31", "--payload-stdin", "--result", "rejected")
-		assertActionSuccess(t, result, "procurement", "update", "rejected", "PR-")
+		result := runCommand(t, stdin, "procurement", "update", "--request-id", "PR-BA08D42C31", "--payload-stdin", "--result", "rejected")
+		assertTextActionSuccess(t, result, "procurement", "update", "rejected", "PR-")
 	})
 }
 
@@ -75,7 +75,7 @@ func TestPayloadInputValidation(t *testing.T) {
 func TestCreateExpenseRequiresPayloadSource(t *testing.T) {
 	t.Parallel()
 
-	result := runCommand(t, nil, "create-expense")
+	result := runCommand(t, nil, "expense", "add")
 
 	if result.code != ExitUsage {
 		t.Fatalf("expected exit %d, got %d", ExitUsage, result.code)
@@ -96,7 +96,7 @@ func TestGetDeleteCommandsRequireRequestID(t *testing.T) {
 		t.Fatalf("unexpected stderr: %q", getResult.stderr)
 	}
 
-	deleteResult := runCommand(t, nil, "delete-expense")
+	deleteResult := runCommand(t, nil, "expense", "delete")
 	if deleteResult.code != ExitUsage {
 		t.Fatalf("expected exit %d, got %d", ExitUsage, deleteResult.code)
 	}
@@ -122,7 +122,7 @@ func TestUpdateLeaveRequiresPayloadRequestID(t *testing.T) {
 func TestRequestIDPrefixValidation(t *testing.T) {
 	t.Parallel()
 
-	result := runCommand(t, nil, "get-procurement", "--request-id", "LV-7B0A3D4F10")
+	result := runCommand(t, nil, "procurement", "get", "--request-id", "LV-7B0A3D4F10")
 
 	if result.code != ExitUsage {
 		t.Fatalf("expected exit %d, got %d", ExitUsage, result.code)
@@ -148,12 +148,53 @@ func TestInvalidResultReturnsUsageError(t *testing.T) {
 func TestResultBranchesForGetAndDelete(t *testing.T) {
 	t.Parallel()
 
-	getResult := runCommand(t, nil, "get-expense", "--request-id", "EX-14C0A7B992", "--result", "not_found")
-	assertActionSuccess(t, getResult, "expense", "get", "not_found", "EX-")
-	assertNoRecord(t, getResult.stdout)
+	getResult := runCommand(t, nil, "expense", "get", "--request-id", "EX-14C0A7B992", "--result", "not_found")
+	assertTextActionSuccess(t, getResult, "expense", "get", "not_found", "EX-")
+	assertNoRecordSection(t, getResult.stdout)
 
-	deleteResult := runCommand(t, nil, "delete-procurement", "--request-id", "PR-BA08D42C31", "--result", "not_found")
-	assertActionSuccess(t, deleteResult, "procurement", "delete", "not_found", "PR-")
+	deleteResult := runCommand(t, nil, "procurement", "delete", "--request-id", "PR-BA08D42C31", "--result", "not_found")
+	assertTextActionSuccess(t, deleteResult, "procurement", "delete", "not_found", "PR-")
+	assertNoRecordSection(t, deleteResult.stdout)
+}
+
+func TestBusinessCommandsSupportJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	t.Run("leave create json", func(t *testing.T) {
+		t.Parallel()
+
+		result := runCommand(t, nil, "create-leave", "--payload", mustJSONArg(t, sampleLeavePayload()), "--output", "json")
+		assertJSONActionSuccess(t, result, "leave", "create", "submitted", "LV-")
+	})
+
+	t.Run("expense add json", func(t *testing.T) {
+		t.Parallel()
+
+		result := runCommand(t, nil, "expense", "add", "--payload", mustJSONArg(t, sampleExpensePayload()), "--output", "json")
+		assertJSONActionSuccess(t, result, "expense", "add", "submitted", "EX-")
+	})
+
+	t.Run("procurement create json", func(t *testing.T) {
+		t.Parallel()
+
+		result := runCommand(t, nil, "procurement", "create", "--payload", mustJSONArg(t, sampleProcurementPayload()), "--output", "json")
+		assertJSONActionSuccess(t, result, "procurement", "create", "submitted", "PR-")
+	})
+}
+
+func TestStructuredTextOutputIncludesNestedFields(t *testing.T) {
+	t.Parallel()
+
+	result := runCommand(t, nil, "expense", "add", "--payload", mustJSONArg(t, sampleExpensePayload()))
+	assertTextActionSuccess(t, result, "expense", "add", "submitted", "EX-")
+	assertTextContainsAll(t, result.stdout,
+		"summary:\n",
+		"  employee:\n",
+		"    id: E1001\n",
+		"  department:\n",
+		"    code: engineering\n",
+		"  item_count: 2\n",
+	)
 }
 
 func TestBusinessRuleFailuresRemain(t *testing.T) {
@@ -177,7 +218,7 @@ func TestBusinessRuleFailuresRemain(t *testing.T) {
 		payload.Days = 0.5
 
 		result := runCommand(t, nil, "create-leave", "--payload", mustJSONArg(t, payload))
-		assertActionSuccess(t, result, "leave", "create", "submitted", "LV-")
+		assertTextActionSuccess(t, result, "leave", "create", "submitted", "LV-")
 	})
 
 	t.Run("leave rejects non-positive days", func(t *testing.T) {
@@ -196,14 +237,14 @@ func TestBusinessRuleFailuresRemain(t *testing.T) {
 		payload := sampleExpensePayload()
 		payload.TotalAmount = 900
 
-		result := runCommand(t, nil, "create-expense", "--payload", mustJSONArg(t, payload))
+		result := runCommand(t, nil, "expense", "add", "--payload", mustJSONArg(t, payload))
 		assertBusinessFailureContains(t, result, "does not match item amount sum")
 	})
 
 	t.Run("expense rejects legacy flat payload fields", func(t *testing.T) {
 		t.Parallel()
 
-		result := runCommand(t, nil, "create-expense", "--payload", `{"employee_id":"E1001","department":"engineering","expense_type":"travel","currency":"CNY","total_amount":1280.5,"items":[{"category":"transport","amount":800,"invoice_id":"INV-001","occurred_on":"2026-04-10","description":"flight"}],"submitted_at":"2026-04-14T10:30:00+08:00"}`)
+		result := runCommand(t, nil, "expense", "add", "--payload", `{"employee_id":"E1001","department":"engineering","expense_type":"travel","currency":"CNY","total_amount":1280.5,"items":[{"category":"transport","amount":800,"invoice_id":"INV-001","occurred_on":"2026-04-10","description":"flight"}],"submitted_at":"2026-04-14T10:30:00+08:00"}`)
 		if result.code != ExitUsage {
 			t.Fatalf("expected exit %d, got %d stderr=%q", ExitUsage, result.code, result.stderr)
 		}
@@ -219,7 +260,7 @@ func TestBusinessRuleFailuresRemain(t *testing.T) {
 		payload.Items[0].Quantity = 3
 		payload.Items[0].UnitPrice = 20000
 
-		result := runCommand(t, nil, "create-procurement", "--payload", mustJSONArg(t, payload))
+		result := runCommand(t, nil, "procurement", "create", "--payload", mustJSONArg(t, payload))
 		assertBusinessFailureContains(t, result, "budget exceeded")
 	})
 }
@@ -249,6 +290,22 @@ func TestCreateLeaveRequestIDIsStable(t *testing.T) {
 	}
 	if first.stdout != second.stdout {
 		t.Fatalf("expected stable output, first=%q second=%q", first.stdout, second.stdout)
+	}
+}
+
+func TestCreateLeaveJSONRequestIDIsStable(t *testing.T) {
+	t.Parallel()
+
+	payloadArg := mustJSONArg(t, sampleLeavePayload())
+
+	first := runCommand(t, nil, "create-leave", "--payload", payloadArg, "--output", "json")
+	second := runCommand(t, nil, "create-leave", "--payload", payloadArg, "--output", "json")
+
+	if first.code != ExitSuccess || second.code != ExitSuccess {
+		t.Fatalf("expected both commands to succeed, first=%d second=%d", first.code, second.code)
+	}
+	if first.stdout != second.stdout {
+		t.Fatalf("expected stable JSON output, first=%q second=%q", first.stdout, second.stdout)
 	}
 }
 
@@ -327,7 +384,7 @@ func writeJSONFile(t *testing.T, value any) string {
 	return path
 }
 
-func assertActionSuccess(t *testing.T, result commandResult, wantType, wantAction, wantStatus, wantPrefix string) {
+func assertJSONActionSuccess(t *testing.T, result commandResult, wantType, wantAction, wantStatus, wantPrefix string) {
 	t.Helper()
 
 	if result.code != ExitSuccess {
@@ -349,15 +406,30 @@ func assertActionSuccess(t *testing.T, result commandResult, wantType, wantActio
 	}
 }
 
-func assertNoRecord(t *testing.T, stdout string) {
+func assertTextActionSuccess(t *testing.T, result commandResult, wantType, wantAction, wantStatus, wantPrefix string) {
 	t.Helper()
 
-	var response actionResponse
-	if err := json.Unmarshal([]byte(stdout), &response); err != nil {
-		t.Fatalf("unmarshal action response: %v", err)
+	if result.code != ExitSuccess {
+		t.Fatalf("expected exit %d, got %d stderr=%q", ExitSuccess, result.code, result.stderr)
 	}
-	if response.Record != nil {
-		t.Fatalf("expected no record, got %#v", response.Record)
+	if result.stderr != "" {
+		t.Fatalf("expected empty stderr, got %q", result.stderr)
+	}
+	if json.Valid([]byte(result.stdout)) {
+		t.Fatalf("expected default output to be structured text, got JSON %q", result.stdout)
+	}
+
+	if got := structuredFieldValue(t, result.stdout, "type"); got != wantType {
+		t.Fatalf("expected type %q, got %q in %q", wantType, got, result.stdout)
+	}
+	if got := structuredFieldValue(t, result.stdout, "action"); got != wantAction {
+		t.Fatalf("expected action %q, got %q in %q", wantAction, got, result.stdout)
+	}
+	if got := structuredFieldValue(t, result.stdout, "status"); got != wantStatus {
+		t.Fatalf("expected status %q, got %q in %q", wantStatus, got, result.stdout)
+	}
+	if got := structuredFieldValue(t, result.stdout, "request_id"); !strings.HasPrefix(got, wantPrefix) {
+		t.Fatalf("expected request id prefix %q, got %q in %q", wantPrefix, got, result.stdout)
 	}
 }
 
@@ -370,4 +442,35 @@ func assertBusinessFailureContains(t *testing.T, result commandResult, want stri
 	if !strings.Contains(result.stderr, want) {
 		t.Fatalf("expected stderr to contain %q, got %q", want, result.stderr)
 	}
+}
+
+func assertNoRecordSection(t *testing.T, stdout string) {
+	t.Helper()
+
+	if strings.Contains(stdout, "\nrecord:\n") || strings.HasPrefix(stdout, "record:\n") {
+		t.Fatalf("expected no record section, got %q", stdout)
+	}
+}
+
+func assertTextContainsAll(t *testing.T, stdout string, wants ...string) {
+	t.Helper()
+
+	for _, want := range wants {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("expected stdout to contain %q, got %q", want, stdout)
+		}
+	}
+}
+
+func structuredFieldValue(t *testing.T, stdout, name string) string {
+	t.Helper()
+
+	prefix := name + ": "
+	for _, line := range strings.Split(stdout, "\n") {
+		if strings.HasPrefix(line, prefix) {
+			return strings.TrimPrefix(line, prefix)
+		}
+	}
+	t.Fatalf("missing field %q in %q", name, stdout)
+	return ""
 }

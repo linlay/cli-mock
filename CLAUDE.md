@@ -150,18 +150,18 @@
 - `mock stdin`
 - `mock lines <count>`
 - `mock stream <count> --interval <duration>`
-- `mock create-leave (--payload <json> | --payload-file <path> | --payload-stdin) [--result <submitted|approved|rejected>]`
-- `mock get-leave --request-id <id> [--result <found|not_found>]`
-- `mock update-leave (--payload <json> | --payload-file <path> | --payload-stdin) [--result <submitted|approved|rejected>]`
-- `mock delete-leave --request-id <id> [--result <deleted|not_found>]`
-- `mock create-expense (--payload <json> | --payload-file <path> | --payload-stdin) [--result <submitted|approved|rejected>]`
-- `mock get-expense --request-id <id> [--result <found|not_found>]`
-- `mock update-expense --request-id <id> (--payload <json> | --payload-file <path> | --payload-stdin) [--result <submitted|approved|rejected>]`
-- `mock delete-expense --request-id <id> [--result <deleted|not_found>]`
-- `mock create-procurement (--payload <json> | --payload-file <path> | --payload-stdin) [--result <submitted|approved|rejected>]`
-- `mock get-procurement --request-id <id> [--result <found|not_found>]`
-- `mock update-procurement --request-id <id> (--payload <json> | --payload-file <path> | --payload-stdin) [--result <submitted|approved|rejected>]`
-- `mock delete-procurement --request-id <id> [--result <deleted|not_found>]`
+- `mock create-leave (--payload <json> | --payload-file <path> | --payload-stdin) [--result <submitted|approved|rejected>] [--output <text|json>]`
+- `mock get-leave --request-id <id> [--result <found|not_found>] [--output <text|json>]`
+- `mock update-leave (--payload <json> | --payload-file <path> | --payload-stdin) [--result <submitted|approved|rejected>] [--output <text|json>]`
+- `mock delete-leave --request-id <id> [--result <deleted|not_found>] [--output <text|json>]`
+- `mock expense add (--payload <json> | --payload-file <path> | --payload-stdin) [--result <submitted|approved|rejected>] [--output <text|json>]`
+- `mock expense get --request-id <id> [--result <found|not_found>] [--output <text|json>]`
+- `mock expense update --request-id <id> (--payload <json> | --payload-file <path> | --payload-stdin) [--result <submitted|approved|rejected>] [--output <text|json>]`
+- `mock expense delete --request-id <id> [--result <deleted|not_found>] [--output <text|json>]`
+- `mock procurement create (--payload <json> | --payload-file <path> | --payload-stdin) [--result <submitted|approved|rejected>] [--output <text|json>]`
+- `mock procurement get --request-id <id> [--result <found|not_found>] [--output <text|json>]`
+- `mock procurement update --request-id <id> (--payload <json> | --payload-file <path> | --payload-stdin) [--result <submitted|approved|rejected>] [--output <text|json>]`
+- `mock procurement delete --request-id <id> [--result <deleted|not_found>] [--output <text|json>]`
 - `mock xdg apply --root <dir> --manifest <path-or-> [--overwrite]`
 - `mock xdg inspect --root <dir> [--reveal]`
 
@@ -175,10 +175,11 @@
 - `sleep` 和 `stream --interval` 使用 Go duration 语法
 - `stream` 在提供自定义内容时，内容条目数必须和 `count` 一致
 - 业务 CRUD 命令是无状态 mock，不会持久化或跨命令共享真实数据
-- `create-*` / `update-*` 只允许从 `--payload`、`--payload-file`、`--payload-stdin` 中选择一种输入来源
+- 业务 `create` / `add` / `update` 命令只允许从 `--payload`、`--payload-file`、`--payload-stdin` 中选择一种输入来源
 - `update-leave` 例外地要求 `request_id` 放在 payload 内
-- `get-*` / `delete-*` 按 `--request-id` 定位，且前缀必须匹配业务类型
+- 业务 `get` / `delete` 命令按 `--request-id` 定位，且前缀必须匹配业务类型
 - `--result` 是正式公开接口，用来显式选择动作级 mock 状态
+- 业务命令默认输出结构化文本；只有显式传 `--output json` 才返回 JSON
 - JSON 业务表单的语法/缺字段错误走 usage 退出码 `2`
 - JSON 业务表单的业务校验失败走退出码 `1`
 - `xdg apply` 只接受 JSON manifest，且只允许写入 `.config/**` 和 `.local/**`
@@ -218,10 +219,10 @@ go test ./...
 ./mock fail broken
 ./mock stream 2 --interval 10ms
 ./mock stream 2 hello world --interval 10ms
-./mock create-leave --payload '{"employee_id":"E1001","employee_name":"Lin","leave_type":"annual","start_date":"2026-04-20","end_date":"2026-04-22","days":3,"reason":"family_trip","handover_to":"E2001","urgent_contact":"13800138000"}'
-./mock create-expense --payload-file ./expense.json --result approved
-printf '{"request_id":"LV-7B0A3D4F10","employee_id":"E1001","employee_name":"Lin","leave_type":"annual","start_date":"2026-04-21","end_date":"2026-04-23","days":3,"reason":"family_trip","handover_to":"E2001","urgent_contact":"13800138000"}' | ./mock update-leave --payload-stdin --result rejected
-./mock get-procurement --request-id PR-BA08D42C31 --result found
+./mock create-leave --payload '{"applicant_id":"E1001","department_id":"engineering","leave_type":"annual","start_date":"2026-04-20","end_date":"2026-04-22","days":2.5,"reason":"family_trip"}'
+./mock expense add --payload-file ./expense.json --result approved --output json
+printf '{"request_id":"LV-7B0A3D4F10","applicant_id":"E1001","department_id":"engineering","leave_type":"annual","start_date":"2026-04-21","end_date":"2026-04-23","days":3,"reason":"family_trip"}' | ./mock update-leave --payload-stdin --result rejected
+./mock procurement get --request-id PR-BA08D42C31 --result found
 ./mock xdg apply --root /tmp/mock-home --manifest ./manifest.json
 ./mock xdg inspect --root /tmp/mock-home --reveal
 ```

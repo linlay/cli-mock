@@ -24,8 +24,8 @@ func TestExecuteHelp(t *testing.T) {
 		"Available Commands:\n",
 		"  create-leave Create a mock leave application\n",
 		"  get-leave  Get a mock leave application\n",
-		"  update-expense Update a mock expense reimbursement\n",
-		"  delete-procurement Delete a mock procurement request\n",
+		"  expense    Mock expense reimbursement commands\n",
+		"  procurement Mock procurement request commands\n",
 		"  stream     Print lines with a delay between each line\n",
 		"Flags:\n  -h, --help         help for this command\n",
 	} {
@@ -59,6 +59,68 @@ func TestVersionHelp(t *testing.T) {
 		"\n" +
 		"Examples:\n" +
 		"  mock version\n"
+
+	if result.stdout != want {
+		t.Fatalf("unexpected stdout:\nwant:\n%s\ngot:\n%s", want, result.stdout)
+	}
+}
+
+func TestExpenseHelp(t *testing.T) {
+	t.Parallel()
+
+	result := runCommand(t, nil, "expense", "--help")
+
+	if result.code != ExitSuccess {
+		t.Fatalf("expected exit %d, got %d", ExitSuccess, result.code)
+	}
+
+	want := "" +
+		"Usage:\n" +
+		"  mock expense\n" +
+		"\n" +
+		"Description:\n" +
+		"  Group mock expense reimbursement commands under a resource-style namespace.\n" +
+		"\n" +
+		"Available Commands:\n" +
+		"  add        Add a mock expense reimbursement\n" +
+		"  get        Get a mock expense reimbursement\n" +
+		"  update     Update a mock expense reimbursement\n" +
+		"  delete     Delete a mock expense reimbursement\n" +
+		"  help       Help about any command\n" +
+		"\n" +
+		"Flags:\n" +
+		"  -h, --help         help for this command\n"
+
+	if result.stdout != want {
+		t.Fatalf("unexpected stdout:\nwant:\n%s\ngot:\n%s", want, result.stdout)
+	}
+}
+
+func TestProcurementHelp(t *testing.T) {
+	t.Parallel()
+
+	result := runCommand(t, nil, "procurement", "--help")
+
+	if result.code != ExitSuccess {
+		t.Fatalf("expected exit %d, got %d", ExitSuccess, result.code)
+	}
+
+	want := "" +
+		"Usage:\n" +
+		"  mock procurement\n" +
+		"\n" +
+		"Description:\n" +
+		"  Group mock procurement request commands under a resource-style namespace.\n" +
+		"\n" +
+		"Available Commands:\n" +
+		"  create     Create a mock procurement request\n" +
+		"  get        Get a mock procurement request\n" +
+		"  update     Update a mock procurement request\n" +
+		"  delete     Delete a mock procurement request\n" +
+		"  help       Help about any command\n" +
+		"\n" +
+		"Flags:\n" +
+		"  -h, --help         help for this command\n"
 
 	if result.stdout != want {
 		t.Fatalf("unexpected stdout:\nwant:\n%s\ngot:\n%s", want, result.stdout)
@@ -229,9 +291,30 @@ func TestXDGInspectHelp(t *testing.T) {
 func TestHelpCommandMatchesFlagHelp(t *testing.T) {
 	t.Parallel()
 
-	for _, name := range []string{"version", "env", "stream", "create-leave", "get-leave", "update-leave", "delete-leave", "create-expense", "get-expense", "update-expense", "delete-expense", "create-procurement", "get-procurement", "update-procurement", "delete-procurement"} {
-		resultFromHelp := runCommand(t, nil, "help", name)
-		resultFromFlag := runCommand(t, nil, name, "--help")
+	for _, path := range [][]string{
+		{"version"},
+		{"env"},
+		{"stream"},
+		{"create-leave"},
+		{"get-leave"},
+		{"update-leave"},
+		{"delete-leave"},
+		{"expense"},
+		{"expense", "add"},
+		{"expense", "get"},
+		{"expense", "update"},
+		{"expense", "delete"},
+		{"procurement"},
+		{"procurement", "create"},
+		{"procurement", "get"},
+		{"procurement", "update"},
+		{"procurement", "delete"},
+	} {
+		helpArgs := append([]string{"help"}, path...)
+		flagArgs := append(append([]string(nil), path...), "--help")
+		resultFromHelp := runCommand(t, nil, helpArgs...)
+		resultFromFlag := runCommand(t, nil, flagArgs...)
+		name := strings.Join(path, " ")
 
 		if resultFromHelp.code != ExitSuccess {
 			t.Fatalf("expected help %s to exit %d, got %d", name, ExitSuccess, resultFromHelp.code)

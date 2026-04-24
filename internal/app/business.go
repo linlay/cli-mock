@@ -8,18 +8,24 @@ import (
 	"io"
 	"math"
 	"os"
+	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 )
 
-const procurementBudgetLimit = 50000.0
+const (
+	procurementBudgetLimit = 50000.0
+	defaultBusinessOutput  = "text"
+)
 
 var (
 	createUpdateResults = []string{"submitted", "approved", "rejected"}
 	getResults          = []string{"found", "not_found"}
 	deleteResults       = []string{"deleted", "not_found"}
+	businessOutputs     = []string{"text", "json"}
 )
 
 type payloadInputOptions struct {
@@ -165,9 +171,48 @@ type procurementRecord struct {
 	Status       string                `json:"status"`
 }
 
+func newExpenseCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:         "expense",
+		Short:       "Mock expense reimbursement commands",
+		Description: "Group mock expense reimbursement commands under a resource-style namespace.",
+		CompletionOptions: cobra.CompletionOptions{
+			DisableDefaultCmd: true,
+		},
+	}
+
+	cmd.AddCommand(
+		newExpenseAddCommand(),
+		newExpenseGetCommand(),
+		newExpenseUpdateCommand(),
+		newExpenseDeleteCommand(),
+	)
+	return cmd
+}
+
+func newProcurementCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:         "procurement",
+		Short:       "Mock procurement request commands",
+		Description: "Group mock procurement request commands under a resource-style namespace.",
+		CompletionOptions: cobra.CompletionOptions{
+			DisableDefaultCmd: true,
+		},
+	}
+
+	cmd.AddCommand(
+		newProcurementCreateCommand(),
+		newProcurementGetCommand(),
+		newProcurementUpdateCommand(),
+		newProcurementDeleteCommand(),
+	)
+	return cmd
+}
+
 func newCreateLeaveCommand() *cobra.Command {
 	var input payloadInputOptions
 	result := "submitted"
+	output := defaultBusinessOutput
 
 	cmd := &cobra.Command{
 		Use:         "create-leave",
@@ -180,6 +225,7 @@ func newCreateLeaveCommand() *cobra.Command {
 		ParamFields: append(
 			payloadSourceFields("leave request"),
 			resultField("submitted", createUpdateResults),
+			outputField(defaultBusinessOutput),
 		),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			raw, err := readPayloadInput(cmd, input)
@@ -194,11 +240,15 @@ func newCreateLeaveCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			outputFormat, err := parseOutputFormat(output)
+			if err != nil {
+				return err
+			}
 			requestID, err := stableRequestID("LV-", leavePayloadForStableID(payload))
 			if err != nil {
 				return failuref("build leave request id: %v", err)
 			}
-			return writeJSON(cmd.OutOrStdout(), actionResponse{
+			return writeBusinessResponse(cmd.OutOrStdout(), outputFormat, actionResponse{
 				Type:       "leave",
 				Action:     "create",
 				Status:     status,
@@ -211,12 +261,14 @@ func newCreateLeaveCommand() *cobra.Command {
 
 	addPayloadInputFlags(cmd, &input)
 	cmd.Flags().StringVar(&result, "result", result, resultUsage(createUpdateResults))
+	cmd.Flags().StringVar(&output, "output", output, outputUsage())
 	return cmd
 }
 
 func newGetLeaveCommand() *cobra.Command {
 	var requestID string
 	result := "found"
+	output := defaultBusinessOutput
 
 	cmd := &cobra.Command{
 		Use:         "get-leave",
@@ -227,6 +279,7 @@ func newGetLeaveCommand() *cobra.Command {
 		ParamFields: []cobra.HelpField{
 			requiredField("request-id", "string", "Target leave request id"),
 			resultField("found", getResults),
+			outputField(defaultBusinessOutput),
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := validateRequestID(requestID, "LV-", "--request-id")
@@ -234,6 +287,10 @@ func newGetLeaveCommand() *cobra.Command {
 				return err
 			}
 			status, err := parseResult(result, getResults)
+			if err != nil {
+				return err
+			}
+			outputFormat, err := parseOutputFormat(output)
 			if err != nil {
 				return err
 			}
@@ -247,18 +304,20 @@ func newGetLeaveCommand() *cobra.Command {
 			if status == "found" {
 				response.Record = mockLeaveRecord(id)
 			}
-			return writeJSON(cmd.OutOrStdout(), response)
+			return writeBusinessResponse(cmd.OutOrStdout(), outputFormat, response)
 		},
 	}
 
 	cmd.Flags().StringVar(&requestID, "request-id", "", "Target leave request id")
 	cmd.Flags().StringVar(&result, "result", result, resultUsage(getResults))
+	cmd.Flags().StringVar(&output, "output", output, outputUsage())
 	return cmd
 }
 
 func newUpdateLeaveCommand() *cobra.Command {
 	var input payloadInputOptions
 	result := "submitted"
+	output := defaultBusinessOutput
 
 	cmd := &cobra.Command{
 		Use:         "update-leave",
@@ -271,6 +330,7 @@ func newUpdateLeaveCommand() *cobra.Command {
 		ParamFields: append(
 			payloadSourceFields("leave update payload including request_id"),
 			resultField("submitted", createUpdateResults),
+			outputField(defaultBusinessOutput),
 		),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			raw, err := readPayloadInput(cmd, input)
@@ -289,7 +349,11 @@ func newUpdateLeaveCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return writeJSON(cmd.OutOrStdout(), actionResponse{
+			outputFormat, err := parseOutputFormat(output)
+			if err != nil {
+				return err
+			}
+			return writeBusinessResponse(cmd.OutOrStdout(), outputFormat, actionResponse{
 				Type:       "leave",
 				Action:     "update",
 				Status:     status,
@@ -302,12 +366,14 @@ func newUpdateLeaveCommand() *cobra.Command {
 
 	addPayloadInputFlags(cmd, &input)
 	cmd.Flags().StringVar(&result, "result", result, resultUsage(createUpdateResults))
+	cmd.Flags().StringVar(&output, "output", output, outputUsage())
 	return cmd
 }
 
 func newDeleteLeaveCommand() *cobra.Command {
 	var requestID string
 	result := "deleted"
+	output := defaultBusinessOutput
 
 	cmd := &cobra.Command{
 		Use:         "delete-leave",
@@ -318,6 +384,7 @@ func newDeleteLeaveCommand() *cobra.Command {
 		ParamFields: []cobra.HelpField{
 			requiredField("request-id", "string", "Target leave request id"),
 			resultField("deleted", deleteResults),
+			outputField(defaultBusinessOutput),
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := validateRequestID(requestID, "LV-", "--request-id")
@@ -328,7 +395,11 @@ func newDeleteLeaveCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return writeJSON(cmd.OutOrStdout(), actionResponse{
+			outputFormat, err := parseOutputFormat(output)
+			if err != nil {
+				return err
+			}
+			return writeBusinessResponse(cmd.OutOrStdout(), outputFormat, actionResponse{
 				Type:      "leave",
 				Action:    "delete",
 				Status:    status,
@@ -339,24 +410,27 @@ func newDeleteLeaveCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&requestID, "request-id", "", "Target leave request id")
 	cmd.Flags().StringVar(&result, "result", result, resultUsage(deleteResults))
+	cmd.Flags().StringVar(&output, "output", output, outputUsage())
 	return cmd
 }
 
-func newCreateExpenseCommand() *cobra.Command {
+func newExpenseAddCommand() *cobra.Command {
 	var input payloadInputOptions
 	result := "submitted"
+	output := defaultBusinessOutput
 
 	cmd := &cobra.Command{
-		Use:         "create-expense",
-		Short:       "Create a mock expense reimbursement",
-		Description: "Validate and create a mock expense reimbursement from JSON input.",
-		Example: "mock create-expense --payload '{\"employee\":{\"id\":\"E1001\",\"name\":\"张三\"},\"department\":{\"code\":\"engineering\",\"name\":\"工程部\"},\"expense_type\":\"travel\",\"currency\":\"CNY\",\"total_amount\":1280.5,\"items\":[{\"category\":\"transport\",\"amount\":800,\"invoice_id\":\"INV-001\",\"occurred_on\":\"2026-04-10\",\"description\":\"flight\"},{\"category\":\"hotel\",\"amount\":480.5,\"invoice_id\":\"INV-002\",\"occurred_on\":\"2026-04-11\",\"description\":\"hotel\"}],\"submitted_at\":\"2026-04-14T10:30:00+08:00\"}'\n" +
-			"mock create-expense --payload-file ./expense.json --result approved\n" +
-			"printf '{\"employee\":{\"id\":\"E1001\",\"name\":\"张三\"},\"department\":{\"code\":\"engineering\",\"name\":\"工程部\"},\"expense_type\":\"travel\",\"currency\":\"CNY\",\"total_amount\":1280.5,\"items\":[{\"category\":\"transport\",\"amount\":800,\"invoice_id\":\"INV-001\",\"occurred_on\":\"2026-04-10\",\"description\":\"flight\"},{\"category\":\"hotel\",\"amount\":480.5,\"invoice_id\":\"INV-002\",\"occurred_on\":\"2026-04-11\",\"description\":\"hotel\"}],\"submitted_at\":\"2026-04-14T10:30:00+08:00\"}' | mock create-expense --payload-stdin --result rejected",
+		Use:         "add",
+		Short:       "Add a mock expense reimbursement",
+		Description: "Validate and add a mock expense reimbursement from JSON input.",
+		Example: "mock expense add --payload '{\"employee\":{\"id\":\"E1001\",\"name\":\"张三\"},\"department\":{\"code\":\"engineering\",\"name\":\"工程部\"},\"expense_type\":\"travel\",\"currency\":\"CNY\",\"total_amount\":1280.5,\"items\":[{\"category\":\"transport\",\"amount\":800,\"invoice_id\":\"INV-001\",\"occurred_on\":\"2026-04-10\",\"description\":\"flight\"},{\"category\":\"hotel\",\"amount\":480.5,\"invoice_id\":\"INV-002\",\"occurred_on\":\"2026-04-11\",\"description\":\"hotel\"}],\"submitted_at\":\"2026-04-14T10:30:00+08:00\"}'\n" +
+			"mock expense add --payload-file ./expense.json --result approved --output json\n" +
+			"printf '{\"employee\":{\"id\":\"E1001\",\"name\":\"张三\"},\"department\":{\"code\":\"engineering\",\"name\":\"工程部\"},\"expense_type\":\"travel\",\"currency\":\"CNY\",\"total_amount\":1280.5,\"items\":[{\"category\":\"transport\",\"amount\":800,\"invoice_id\":\"INV-001\",\"occurred_on\":\"2026-04-10\",\"description\":\"flight\"},{\"category\":\"hotel\",\"amount\":480.5,\"invoice_id\":\"INV-002\",\"occurred_on\":\"2026-04-11\",\"description\":\"hotel\"}],\"submitted_at\":\"2026-04-14T10:30:00+08:00\"}' | mock expense add --payload-stdin --result rejected",
 		Args: cobra.NoArgs,
 		ParamFields: append(
 			payloadSourceFields("expense request"),
 			resultField("submitted", createUpdateResults),
+			outputField(defaultBusinessOutput),
 		),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			raw, err := readPayloadInput(cmd, input)
@@ -371,13 +445,17 @@ func newCreateExpenseCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			outputFormat, err := parseOutputFormat(output)
+			if err != nil {
+				return err
+			}
 			requestID, err := stableRequestID("EX-", payload)
 			if err != nil {
 				return failuref("build expense request id: %v", err)
 			}
-			return writeJSON(cmd.OutOrStdout(), actionResponse{
+			return writeBusinessResponse(cmd.OutOrStdout(), outputFormat, actionResponse{
 				Type:       "expense",
-				Action:     "create",
+				Action:     "add",
 				Status:     status,
 				RequestID:  requestID,
 				Summary:    buildExpenseSummary(payload),
@@ -388,22 +466,25 @@ func newCreateExpenseCommand() *cobra.Command {
 
 	addPayloadInputFlags(cmd, &input)
 	cmd.Flags().StringVar(&result, "result", result, resultUsage(createUpdateResults))
+	cmd.Flags().StringVar(&output, "output", output, outputUsage())
 	return cmd
 }
 
-func newGetExpenseCommand() *cobra.Command {
+func newExpenseGetCommand() *cobra.Command {
 	var requestID string
 	result := "found"
+	output := defaultBusinessOutput
 
 	cmd := &cobra.Command{
-		Use:         "get-expense",
+		Use:         "get",
 		Short:       "Get a mock expense reimbursement",
 		Description: "Return a mock expense reimbursement record for the given request id.",
-		Example:     "mock get-expense --request-id EX-14C0A7B992\nmock get-expense --request-id EX-14C0A7B992 --result not_found",
+		Example:     "mock expense get --request-id EX-14C0A7B992\nmock expense get --request-id EX-14C0A7B992 --result not_found",
 		Args:        cobra.NoArgs,
 		ParamFields: []cobra.HelpField{
 			requiredField("request-id", "string", "Target expense request id"),
 			resultField("found", getResults),
+			outputField(defaultBusinessOutput),
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := validateRequestID(requestID, "EX-", "--request-id")
@@ -411,6 +492,10 @@ func newGetExpenseCommand() *cobra.Command {
 				return err
 			}
 			status, err := parseResult(result, getResults)
+			if err != nil {
+				return err
+			}
+			outputFormat, err := parseOutputFormat(output)
 			if err != nil {
 				return err
 			}
@@ -424,27 +509,29 @@ func newGetExpenseCommand() *cobra.Command {
 			if status == "found" {
 				response.Record = mockExpenseRecord(id)
 			}
-			return writeJSON(cmd.OutOrStdout(), response)
+			return writeBusinessResponse(cmd.OutOrStdout(), outputFormat, response)
 		},
 	}
 
 	cmd.Flags().StringVar(&requestID, "request-id", "", "Target expense request id")
 	cmd.Flags().StringVar(&result, "result", result, resultUsage(getResults))
+	cmd.Flags().StringVar(&output, "output", output, outputUsage())
 	return cmd
 }
 
-func newUpdateExpenseCommand() *cobra.Command {
+func newExpenseUpdateCommand() *cobra.Command {
 	var input payloadInputOptions
 	var requestID string
 	result := "submitted"
+	output := defaultBusinessOutput
 
 	cmd := &cobra.Command{
-		Use:         "update-expense",
+		Use:         "update",
 		Short:       "Update a mock expense reimbursement",
 		Description: "Validate and update a mock expense reimbursement from JSON input.",
-		Example: "mock update-expense --request-id EX-14C0A7B992 --payload '{\"employee\":{\"id\":\"E1001\",\"name\":\"张三\"},\"department\":{\"code\":\"engineering\",\"name\":\"工程部\"},\"expense_type\":\"travel\",\"currency\":\"CNY\",\"total_amount\":1280.5,\"items\":[{\"category\":\"transport\",\"amount\":800,\"invoice_id\":\"INV-001\",\"occurred_on\":\"2026-04-10\",\"description\":\"flight\"},{\"category\":\"hotel\",\"amount\":480.5,\"invoice_id\":\"INV-002\",\"occurred_on\":\"2026-04-11\",\"description\":\"hotel\"}],\"submitted_at\":\"2026-04-14T10:30:00+08:00\"}'\n" +
-			"mock update-expense --request-id EX-14C0A7B992 --payload-file ./expense-update.json --result approved\n" +
-			"printf '{\"employee\":{\"id\":\"E1001\",\"name\":\"张三\"},\"department\":{\"code\":\"engineering\",\"name\":\"工程部\"},\"expense_type\":\"travel\",\"currency\":\"CNY\",\"total_amount\":1280.5,\"items\":[{\"category\":\"transport\",\"amount\":800,\"invoice_id\":\"INV-001\",\"occurred_on\":\"2026-04-10\",\"description\":\"flight\"},{\"category\":\"hotel\",\"amount\":480.5,\"invoice_id\":\"INV-002\",\"occurred_on\":\"2026-04-11\",\"description\":\"hotel\"}],\"submitted_at\":\"2026-04-14T10:30:00+08:00\"}' | mock update-expense --request-id EX-14C0A7B992 --payload-stdin --result rejected",
+		Example: "mock expense update --request-id EX-14C0A7B992 --payload '{\"employee\":{\"id\":\"E1001\",\"name\":\"张三\"},\"department\":{\"code\":\"engineering\",\"name\":\"工程部\"},\"expense_type\":\"travel\",\"currency\":\"CNY\",\"total_amount\":1280.5,\"items\":[{\"category\":\"transport\",\"amount\":800,\"invoice_id\":\"INV-001\",\"occurred_on\":\"2026-04-10\",\"description\":\"flight\"},{\"category\":\"hotel\",\"amount\":480.5,\"invoice_id\":\"INV-002\",\"occurred_on\":\"2026-04-11\",\"description\":\"hotel\"}],\"submitted_at\":\"2026-04-14T10:30:00+08:00\"}'\n" +
+			"mock expense update --request-id EX-14C0A7B992 --payload-file ./expense-update.json --result approved --output json\n" +
+			"printf '{\"employee\":{\"id\":\"E1001\",\"name\":\"张三\"},\"department\":{\"code\":\"engineering\",\"name\":\"工程部\"},\"expense_type\":\"travel\",\"currency\":\"CNY\",\"total_amount\":1280.5,\"items\":[{\"category\":\"transport\",\"amount\":800,\"invoice_id\":\"INV-001\",\"occurred_on\":\"2026-04-10\",\"description\":\"flight\"},{\"category\":\"hotel\",\"amount\":480.5,\"invoice_id\":\"INV-002\",\"occurred_on\":\"2026-04-11\",\"description\":\"hotel\"}],\"submitted_at\":\"2026-04-14T10:30:00+08:00\"}' | mock expense update --request-id EX-14C0A7B992 --payload-stdin --result rejected",
 		Args: cobra.NoArgs,
 		ParamFields: append(
 			[]cobra.HelpField{
@@ -453,6 +540,7 @@ func newUpdateExpenseCommand() *cobra.Command {
 			append(
 				payloadSourceFields("expense update payload"),
 				resultField("submitted", createUpdateResults),
+				outputField(defaultBusinessOutput),
 			)...,
 		),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -472,7 +560,11 @@ func newUpdateExpenseCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return writeJSON(cmd.OutOrStdout(), actionResponse{
+			outputFormat, err := parseOutputFormat(output)
+			if err != nil {
+				return err
+			}
+			return writeBusinessResponse(cmd.OutOrStdout(), outputFormat, actionResponse{
 				Type:       "expense",
 				Action:     "update",
 				Status:     status,
@@ -486,22 +578,25 @@ func newUpdateExpenseCommand() *cobra.Command {
 	addPayloadInputFlags(cmd, &input)
 	cmd.Flags().StringVar(&requestID, "request-id", "", "Target expense request id")
 	cmd.Flags().StringVar(&result, "result", result, resultUsage(createUpdateResults))
+	cmd.Flags().StringVar(&output, "output", output, outputUsage())
 	return cmd
 }
 
-func newDeleteExpenseCommand() *cobra.Command {
+func newExpenseDeleteCommand() *cobra.Command {
 	var requestID string
 	result := "deleted"
+	output := defaultBusinessOutput
 
 	cmd := &cobra.Command{
-		Use:         "delete-expense",
+		Use:         "delete",
 		Short:       "Delete a mock expense reimbursement",
 		Description: "Return a mock expense deletion receipt for the given request id.",
-		Example:     "mock delete-expense --request-id EX-14C0A7B992\nmock delete-expense --request-id EX-14C0A7B992 --result not_found",
+		Example:     "mock expense delete --request-id EX-14C0A7B992\nmock expense delete --request-id EX-14C0A7B992 --result not_found",
 		Args:        cobra.NoArgs,
 		ParamFields: []cobra.HelpField{
 			requiredField("request-id", "string", "Target expense request id"),
 			resultField("deleted", deleteResults),
+			outputField(defaultBusinessOutput),
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := validateRequestID(requestID, "EX-", "--request-id")
@@ -512,7 +607,11 @@ func newDeleteExpenseCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return writeJSON(cmd.OutOrStdout(), actionResponse{
+			outputFormat, err := parseOutputFormat(output)
+			if err != nil {
+				return err
+			}
+			return writeBusinessResponse(cmd.OutOrStdout(), outputFormat, actionResponse{
 				Type:      "expense",
 				Action:    "delete",
 				Status:    status,
@@ -523,24 +622,27 @@ func newDeleteExpenseCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&requestID, "request-id", "", "Target expense request id")
 	cmd.Flags().StringVar(&result, "result", result, resultUsage(deleteResults))
+	cmd.Flags().StringVar(&output, "output", output, outputUsage())
 	return cmd
 }
 
-func newCreateProcurementCommand() *cobra.Command {
+func newProcurementCreateCommand() *cobra.Command {
 	var input payloadInputOptions
 	result := "submitted"
+	output := defaultBusinessOutput
 
 	cmd := &cobra.Command{
-		Use:         "create-procurement",
+		Use:         "create",
 		Short:       "Create a mock procurement request",
 		Description: "Validate and create a mock procurement request from JSON input.",
-		Example: "mock create-procurement --payload '{\"requester_id\":\"E1001\",\"department\":\"engineering\",\"budget_code\":\"RD-2026-001\",\"reason\":\"team expansion\",\"delivery_city\":\"Shanghai\",\"items\":[{\"name\":\"MacBook Pro\",\"quantity\":2,\"unit_price\":18999,\"vendor\":\"Apple\"}],\"approvers\":[\"MGR100\",\"FIN200\"],\"requested_at\":\"2026-04-14T11:00:00+08:00\"}'\n" +
-			"mock create-procurement --payload-file ./procurement.json --result approved\n" +
-			"printf '{\"requester_id\":\"E1001\",\"department\":\"engineering\",\"budget_code\":\"RD-2026-001\",\"reason\":\"team expansion\",\"delivery_city\":\"Shanghai\",\"items\":[{\"name\":\"MacBook Pro\",\"quantity\":2,\"unit_price\":18999,\"vendor\":\"Apple\"}],\"approvers\":[\"MGR100\",\"FIN200\"],\"requested_at\":\"2026-04-14T11:00:00+08:00\"}' | mock create-procurement --payload-stdin --result rejected",
+		Example: "mock procurement create --payload '{\"requester_id\":\"E1001\",\"department\":\"engineering\",\"budget_code\":\"RD-2026-001\",\"reason\":\"team expansion\",\"delivery_city\":\"Shanghai\",\"items\":[{\"name\":\"MacBook Pro\",\"quantity\":2,\"unit_price\":18999,\"vendor\":\"Apple\"}],\"approvers\":[\"MGR100\",\"FIN200\"],\"requested_at\":\"2026-04-14T11:00:00+08:00\"}'\n" +
+			"mock procurement create --payload-file ./procurement.json --result approved --output json\n" +
+			"printf '{\"requester_id\":\"E1001\",\"department\":\"engineering\",\"budget_code\":\"RD-2026-001\",\"reason\":\"team expansion\",\"delivery_city\":\"Shanghai\",\"items\":[{\"name\":\"MacBook Pro\",\"quantity\":2,\"unit_price\":18999,\"vendor\":\"Apple\"}],\"approvers\":[\"MGR100\",\"FIN200\"],\"requested_at\":\"2026-04-14T11:00:00+08:00\"}' | mock procurement create --payload-stdin --result rejected",
 		Args: cobra.NoArgs,
 		ParamFields: append(
 			payloadSourceFields("procurement request"),
 			resultField("submitted", createUpdateResults),
+			outputField(defaultBusinessOutput),
 		),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			raw, err := readPayloadInput(cmd, input)
@@ -555,11 +657,15 @@ func newCreateProcurementCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			outputFormat, err := parseOutputFormat(output)
+			if err != nil {
+				return err
+			}
 			requestID, err := stableRequestID("PR-", payload)
 			if err != nil {
 				return failuref("build procurement request id: %v", err)
 			}
-			return writeJSON(cmd.OutOrStdout(), actionResponse{
+			return writeBusinessResponse(cmd.OutOrStdout(), outputFormat, actionResponse{
 				Type:       "procurement",
 				Action:     "create",
 				Status:     status,
@@ -572,22 +678,25 @@ func newCreateProcurementCommand() *cobra.Command {
 
 	addPayloadInputFlags(cmd, &input)
 	cmd.Flags().StringVar(&result, "result", result, resultUsage(createUpdateResults))
+	cmd.Flags().StringVar(&output, "output", output, outputUsage())
 	return cmd
 }
 
-func newGetProcurementCommand() *cobra.Command {
+func newProcurementGetCommand() *cobra.Command {
 	var requestID string
 	result := "found"
+	output := defaultBusinessOutput
 
 	cmd := &cobra.Command{
-		Use:         "get-procurement",
+		Use:         "get",
 		Short:       "Get a mock procurement request",
 		Description: "Return a mock procurement request record for the given request id.",
-		Example:     "mock get-procurement --request-id PR-BA08D42C31\nmock get-procurement --request-id PR-BA08D42C31 --result not_found",
+		Example:     "mock procurement get --request-id PR-BA08D42C31\nmock procurement get --request-id PR-BA08D42C31 --result not_found",
 		Args:        cobra.NoArgs,
 		ParamFields: []cobra.HelpField{
 			requiredField("request-id", "string", "Target procurement request id"),
 			resultField("found", getResults),
+			outputField(defaultBusinessOutput),
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := validateRequestID(requestID, "PR-", "--request-id")
@@ -595,6 +704,10 @@ func newGetProcurementCommand() *cobra.Command {
 				return err
 			}
 			status, err := parseResult(result, getResults)
+			if err != nil {
+				return err
+			}
+			outputFormat, err := parseOutputFormat(output)
 			if err != nil {
 				return err
 			}
@@ -608,27 +721,29 @@ func newGetProcurementCommand() *cobra.Command {
 			if status == "found" {
 				response.Record = mockProcurementRecord(id)
 			}
-			return writeJSON(cmd.OutOrStdout(), response)
+			return writeBusinessResponse(cmd.OutOrStdout(), outputFormat, response)
 		},
 	}
 
 	cmd.Flags().StringVar(&requestID, "request-id", "", "Target procurement request id")
 	cmd.Flags().StringVar(&result, "result", result, resultUsage(getResults))
+	cmd.Flags().StringVar(&output, "output", output, outputUsage())
 	return cmd
 }
 
-func newUpdateProcurementCommand() *cobra.Command {
+func newProcurementUpdateCommand() *cobra.Command {
 	var input payloadInputOptions
 	var requestID string
 	result := "submitted"
+	output := defaultBusinessOutput
 
 	cmd := &cobra.Command{
-		Use:         "update-procurement",
+		Use:         "update",
 		Short:       "Update a mock procurement request",
 		Description: "Validate and update a mock procurement request from JSON input.",
-		Example: "mock update-procurement --request-id PR-BA08D42C31 --payload '{\"requester_id\":\"E1001\",\"department\":\"engineering\",\"budget_code\":\"RD-2026-001\",\"reason\":\"team expansion\",\"delivery_city\":\"Shanghai\",\"items\":[{\"name\":\"MacBook Pro\",\"quantity\":2,\"unit_price\":18999,\"vendor\":\"Apple\"}],\"approvers\":[\"MGR100\",\"FIN200\"],\"requested_at\":\"2026-04-14T11:00:00+08:00\"}'\n" +
-			"mock update-procurement --request-id PR-BA08D42C31 --payload-file ./procurement-update.json --result approved\n" +
-			"printf '{\"requester_id\":\"E1001\",\"department\":\"engineering\",\"budget_code\":\"RD-2026-001\",\"reason\":\"team expansion\",\"delivery_city\":\"Shanghai\",\"items\":[{\"name\":\"MacBook Pro\",\"quantity\":2,\"unit_price\":18999,\"vendor\":\"Apple\"}],\"approvers\":[\"MGR100\",\"FIN200\"],\"requested_at\":\"2026-04-14T11:00:00+08:00\"}' | mock update-procurement --request-id PR-BA08D42C31 --payload-stdin --result rejected",
+		Example: "mock procurement update --request-id PR-BA08D42C31 --payload '{\"requester_id\":\"E1001\",\"department\":\"engineering\",\"budget_code\":\"RD-2026-001\",\"reason\":\"team expansion\",\"delivery_city\":\"Shanghai\",\"items\":[{\"name\":\"MacBook Pro\",\"quantity\":2,\"unit_price\":18999,\"vendor\":\"Apple\"}],\"approvers\":[\"MGR100\",\"FIN200\"],\"requested_at\":\"2026-04-14T11:00:00+08:00\"}'\n" +
+			"mock procurement update --request-id PR-BA08D42C31 --payload-file ./procurement-update.json --result approved --output json\n" +
+			"printf '{\"requester_id\":\"E1001\",\"department\":\"engineering\",\"budget_code\":\"RD-2026-001\",\"reason\":\"team expansion\",\"delivery_city\":\"Shanghai\",\"items\":[{\"name\":\"MacBook Pro\",\"quantity\":2,\"unit_price\":18999,\"vendor\":\"Apple\"}],\"approvers\":[\"MGR100\",\"FIN200\"],\"requested_at\":\"2026-04-14T11:00:00+08:00\"}' | mock procurement update --request-id PR-BA08D42C31 --payload-stdin --result rejected",
 		Args: cobra.NoArgs,
 		ParamFields: append(
 			[]cobra.HelpField{
@@ -637,6 +752,7 @@ func newUpdateProcurementCommand() *cobra.Command {
 			append(
 				payloadSourceFields("procurement update payload"),
 				resultField("submitted", createUpdateResults),
+				outputField(defaultBusinessOutput),
 			)...,
 		),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -656,7 +772,11 @@ func newUpdateProcurementCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return writeJSON(cmd.OutOrStdout(), actionResponse{
+			outputFormat, err := parseOutputFormat(output)
+			if err != nil {
+				return err
+			}
+			return writeBusinessResponse(cmd.OutOrStdout(), outputFormat, actionResponse{
 				Type:       "procurement",
 				Action:     "update",
 				Status:     status,
@@ -670,22 +790,25 @@ func newUpdateProcurementCommand() *cobra.Command {
 	addPayloadInputFlags(cmd, &input)
 	cmd.Flags().StringVar(&requestID, "request-id", "", "Target procurement request id")
 	cmd.Flags().StringVar(&result, "result", result, resultUsage(createUpdateResults))
+	cmd.Flags().StringVar(&output, "output", output, outputUsage())
 	return cmd
 }
 
-func newDeleteProcurementCommand() *cobra.Command {
+func newProcurementDeleteCommand() *cobra.Command {
 	var requestID string
 	result := "deleted"
+	output := defaultBusinessOutput
 
 	cmd := &cobra.Command{
-		Use:         "delete-procurement",
+		Use:         "delete",
 		Short:       "Delete a mock procurement request",
 		Description: "Return a mock procurement deletion receipt for the given request id.",
-		Example:     "mock delete-procurement --request-id PR-BA08D42C31\nmock delete-procurement --request-id PR-BA08D42C31 --result not_found",
+		Example:     "mock procurement delete --request-id PR-BA08D42C31\nmock procurement delete --request-id PR-BA08D42C31 --result not_found",
 		Args:        cobra.NoArgs,
 		ParamFields: []cobra.HelpField{
 			requiredField("request-id", "string", "Target procurement request id"),
 			resultField("deleted", deleteResults),
+			outputField(defaultBusinessOutput),
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := validateRequestID(requestID, "PR-", "--request-id")
@@ -696,7 +819,11 @@ func newDeleteProcurementCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return writeJSON(cmd.OutOrStdout(), actionResponse{
+			outputFormat, err := parseOutputFormat(output)
+			if err != nil {
+				return err
+			}
+			return writeBusinessResponse(cmd.OutOrStdout(), outputFormat, actionResponse{
 				Type:      "procurement",
 				Action:    "delete",
 				Status:    status,
@@ -707,6 +834,7 @@ func newDeleteProcurementCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&requestID, "request-id", "", "Target procurement request id")
 	cmd.Flags().StringVar(&result, "result", result, resultUsage(deleteResults))
+	cmd.Flags().StringVar(&output, "output", output, outputUsage())
 	return cmd
 }
 
@@ -738,8 +866,26 @@ func resultField(defaultValue string, results []string) cobra.HelpField {
 	return optionalField("result", "string", defaultValue, resultUsage(results))
 }
 
+func outputField(defaultValue string) cobra.HelpField {
+	return optionalField("output", "string", defaultValue, outputUsage())
+}
+
 func resultUsage(results []string) string {
 	return "Mock result: " + strings.Join(results, "|")
+}
+
+func outputUsage() string {
+	return "Response format: " + strings.Join(businessOutputs, "|")
+}
+
+func parseOutputFormat(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	for _, next := range businessOutputs {
+		if raw == next {
+			return raw, nil
+		}
+	}
+	return "", fmt.Errorf("invalid --output %q: must be one of %s", raw, strings.Join(businessOutputs, ", "))
 }
 
 func readPayloadInput(cmd *cobra.Command, input payloadInputOptions) (string, error) {
@@ -1196,6 +1342,30 @@ func stableRequestID(prefix string, payload any) (string, error) {
 	return prefix + strings.ToUpper(hex.EncodeToString(sum[:]))[:10], nil
 }
 
+func writeBusinessResponse(out io.Writer, outputFormat string, response actionResponse) error {
+	if outputFormat == "json" {
+		return writeJSON(out, response)
+	}
+
+	var b strings.Builder
+	writeStructuredField(&b, "type", response.Type, 0)
+	writeStructuredField(&b, "action", response.Action, 0)
+	writeStructuredField(&b, "status", response.Status, 0)
+	writeStructuredField(&b, "request_id", response.RequestID, 0)
+	if strings.TrimSpace(response.Validation) != "" {
+		writeStructuredField(&b, "validation", response.Validation, 0)
+	}
+	if response.Summary != nil {
+		writeStructuredField(&b, "summary", response.Summary, 0)
+	}
+	if response.Record != nil {
+		writeStructuredField(&b, "record", response.Record, 0)
+	}
+
+	_, err := fmt.Fprint(out, b.String())
+	return err
+}
+
 func writeJSON(out io.Writer, value any) error {
 	data, err := json.Marshal(value)
 	if err != nil {
@@ -1203,6 +1373,158 @@ func writeJSON(out io.Writer, value any) error {
 	}
 	_, err = fmt.Fprintln(out, string(data))
 	return err
+}
+
+func writeStructuredField(b *strings.Builder, name string, value any, indent int) {
+	rv := normalizeValue(reflect.ValueOf(value))
+	if !rv.IsValid() {
+		return
+	}
+
+	prefix := strings.Repeat(" ", indent)
+	if isScalarValue(rv) {
+		fmt.Fprintf(b, "%s%s: %s\n", prefix, name, formatScalarValue(rv))
+		return
+	}
+
+	fmt.Fprintf(b, "%s%s:\n", prefix, name)
+	writeStructuredValue(b, rv, indent+2)
+}
+
+func writeStructuredValue(b *strings.Builder, rv reflect.Value, indent int) {
+	rv = normalizeValue(rv)
+	if !rv.IsValid() {
+		return
+	}
+
+	switch rv.Kind() {
+	case reflect.Struct:
+		writeStructuredStruct(b, rv, indent)
+	case reflect.Slice, reflect.Array:
+		writeStructuredList(b, rv, indent)
+	default:
+		fmt.Fprintf(b, "%s%s\n", strings.Repeat(" ", indent), formatScalarValue(rv))
+	}
+}
+
+func writeStructuredStruct(b *strings.Builder, rv reflect.Value, indent int) {
+	rt := rv.Type()
+	for i := 0; i < rt.NumField(); i++ {
+		field := rt.Field(i)
+		if field.PkgPath != "" {
+			continue
+		}
+
+		name, omitempty, ok := jsonFieldName(field)
+		if !ok {
+			continue
+		}
+
+		value := normalizeValue(rv.Field(i))
+		if !value.IsValid() {
+			if omitempty {
+				continue
+			}
+			fmt.Fprintf(b, "%s%s: null\n", strings.Repeat(" ", indent), name)
+			continue
+		}
+		if omitempty && value.IsZero() {
+			continue
+		}
+		writeStructuredField(b, name, value.Interface(), indent)
+	}
+}
+
+func writeStructuredList(b *strings.Builder, rv reflect.Value, indent int) {
+	if rv.Len() == 0 {
+		fmt.Fprintf(b, "%s[]\n", strings.Repeat(" ", indent))
+		return
+	}
+
+	for i := 0; i < rv.Len(); i++ {
+		item := normalizeValue(rv.Index(i))
+		prefix := strings.Repeat(" ", indent)
+		if !item.IsValid() {
+			fmt.Fprintf(b, "%s- null\n", prefix)
+			continue
+		}
+		if isScalarValue(item) {
+			fmt.Fprintf(b, "%s- %s\n", prefix, formatScalarValue(item))
+			continue
+		}
+
+		fmt.Fprintf(b, "%s-\n", prefix)
+		writeStructuredValue(b, item, indent+2)
+	}
+}
+
+func normalizeValue(rv reflect.Value) reflect.Value {
+	for rv.IsValid() {
+		switch rv.Kind() {
+		case reflect.Interface, reflect.Pointer:
+			if rv.IsNil() {
+				return reflect.Value{}
+			}
+			rv = rv.Elem()
+		default:
+			return rv
+		}
+	}
+	return rv
+}
+
+func isScalarValue(rv reflect.Value) bool {
+	switch rv.Kind() {
+	case reflect.String, reflect.Bool,
+		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
+		reflect.Float32, reflect.Float64:
+		return true
+	default:
+		return false
+	}
+}
+
+func formatScalarValue(rv reflect.Value) string {
+	switch rv.Kind() {
+	case reflect.String:
+		return rv.String()
+	case reflect.Bool:
+		return strconv.FormatBool(rv.Bool())
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return strconv.FormatInt(rv.Int(), 10)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return strconv.FormatUint(rv.Uint(), 10)
+	case reflect.Float32, reflect.Float64:
+		return strconv.FormatFloat(rv.Float(), 'f', -1, 64)
+	default:
+		return fmt.Sprint(rv.Interface())
+	}
+}
+
+func jsonFieldName(field reflect.StructField) (string, bool, bool) {
+	tag := field.Tag.Get("json")
+	if tag == "-" {
+		return "", false, false
+	}
+	if tag == "" {
+		return field.Name, false, true
+	}
+
+	parts := strings.Split(tag, ",")
+	if len(parts) == 0 || parts[0] == "" {
+		return field.Name, containsString(parts[1:], "omitempty"), true
+	}
+	return parts[0], containsString(parts[1:], "omitempty"), true
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func amountToCents(value float64) int64 {
