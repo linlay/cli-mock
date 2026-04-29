@@ -9,6 +9,7 @@
 - 读取环境变量和标准输入
 - 生成 JSON、逐行输出和延迟流式输出
 - 通过无状态 CRUD 表单命令模拟较重的业务场景
+- 输出固定的知识库召回和网页搜索召回结果主体
 - 创建和检查可直接使用的 `.config` / `.local` mock 环境树
 
 如果你要看命令边界、目录分工和开发约定，请看 [CLAUDE.md](./CLAUDE.md)。
@@ -45,6 +46,8 @@ printf 'first\nsecond\n' | ./mock stdin
 printf '{"requester_id":"E1001","department":"engineering","budget_code":"RD-2026-001","reason":"team expansion","delivery_city":"Shanghai","items":[{"name":"MacBook Pro","quantity":2,"unit_price":18999,"vendor":"Apple"}],"approvers":["MGR100","FIN200"],"requested_at":"2026-04-14T11:00:00+08:00"}' | ./mock procurement update --request-id PR-BA08D42C31 --payload-stdin --result rejected
 ./mock expense get --request-id EX-14C0A7B992 --result not_found
 ./mock delete-leave --request-id LV-7B0A3D4F10
+./mock recall knowledge
+./mock recall web-search --output json
 ./mock xdg apply --root /tmp/mock-home --manifest ./manifest.json
 ./mock xdg inspect --root /tmp/mock-home
 ```
@@ -68,7 +71,9 @@ go test ./...
 - 结果分支：
   业务 CRUD 命令支持 `--result` 显式控制返回状态，例如 `submitted`、`approved`、`rejected`、`found`、`not_found`、`deleted`。
 - 输出格式：
-  业务命令默认输出稳定的结构化文本；显式传 `--output json` 时返回原有 JSON 响应。
+  业务命令和召回命令默认输出稳定的结构化文本；显式传 `--output json` 时返回 JSON 响应。
+- 召回 mock：
+  `recall knowledge` 和 `recall web-search` 输出固定的召回结果主体。JSON 顶层只包含 `query`、`sourceCount`、`chunkCount`、`sources`；召回 chunk 的 `content` 均为纯文字；`--query` 可覆盖查询文本。`source.publish` 事件字段由智能体平台自行拼装。
 - 环境变量：
   `env <key>` 会读取指定环境变量；变量不存在时返回退出码 `1`。
 - 标准输入：
@@ -183,6 +188,7 @@ tar -xzf mock_v0.1.0_darwin_arm64.tar.gz
 ./mock json '{"name":"cli-mock"}'
 ./mock lines 2
 printf 'demo\n' | ./mock stdin
+./mock recall knowledge --output json
 ./mock xdg inspect --root /tmp/mock-home
 ```
 
@@ -198,7 +204,7 @@ printf 'demo\n' | ./mock stdin
 - `expense` 报金额不匹配：确认 `total_amount` 等于所有 `items[].amount` 之和。
 - `procurement` 报 `budget exceeded`：当前 mock 会在采购总金额超过 `50000` 时返回业务失败。
 - `--result` 报非法值：使用命令帮助中列出的动作级枚举，例如 create/update 用 `submitted|approved|rejected`。
-- 需要机器可解析输出时：为业务命令显式加 `--output json`。
+- 需要机器可解析输出时：为业务命令或召回命令显式加 `--output json`。
 - `xdg apply` 报路径错误：确认 manifest 中的 `path` 是相对路径，并且以 `.config/` 或 `.local/` 开头。
 - `xdg apply` 报覆盖错误：已有文件默认不会覆盖，重写时加 `--overwrite`。
 - `xdg inspect` 输出里看不到文件内容：默认只返回 metadata，需要时加 `--reveal`。

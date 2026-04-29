@@ -162,6 +162,8 @@
 - `mock procurement get --request-id <id> [--result <found|not_found>] [--output <text|json>]`
 - `mock procurement update --request-id <id> (--payload <json> | --payload-file <path> | --payload-stdin) [--result <submitted|approved|rejected>] [--output <text|json>]`
 - `mock procurement delete --request-id <id> [--result <deleted|not_found>] [--output <text|json>]`
+- `mock recall knowledge [--query <text>] [--output <text|json>]`
+- `mock recall web-search [--query <text>] [--output <text|json>]`
 - `mock xdg apply --root <dir> --manifest <path-or-> [--overwrite]`
 - `mock xdg inspect --root <dir> [--reveal]`
 
@@ -179,7 +181,9 @@
 - `update-leave` 例外地要求 `request_id` 放在 payload 内
 - 业务 `get` / `delete` 命令按 `--request-id` 定位，且前缀必须匹配业务类型
 - `--result` 是正式公开接口，用来显式选择动作级 mock 状态
-- 业务命令默认输出结构化文本；只有显式传 `--output json` 才返回 JSON
+- 业务命令和召回命令默认输出结构化文本；只有显式传 `--output json` 才返回 JSON
+- 召回命令是固定样例 mock，不连接真实知识库或网页搜索；JSON 顶层只包含 `query`、`sourceCount`、`chunkCount`、`sources`
+- 召回命令的 chunk `content` 只使用纯文字；`source.publish` 的 `type`、`publishId`、`runId`、`kind` 等事件字段由智能体平台自行拼装
 - JSON 业务表单的语法/缺字段错误走 usage 退出码 `2`
 - JSON 业务表单的业务校验失败走退出码 `1`
 - `xdg apply` 只接受 JSON manifest，且只允许写入 `.config/**` 和 `.local/**`
@@ -223,6 +227,8 @@ go test ./...
 ./mock expense add --payload-file ./expense.json --result approved --output json
 printf '{"request_id":"LV-7B0A3D4F10","applicant_id":"E1001","department_id":"engineering","leave_type":"annual","start_date":"2026-04-21","end_date":"2026-04-23","days":3,"reason":"family_trip"}' | ./mock update-leave --payload-stdin --result rejected
 ./mock procurement get --request-id PR-BA08D42C31 --result found
+./mock recall knowledge --output json
+./mock recall web-search
 ./mock xdg apply --root /tmp/mock-home --manifest ./manifest.json
 ./mock xdg inspect --root /tmp/mock-home --reveal
 ```

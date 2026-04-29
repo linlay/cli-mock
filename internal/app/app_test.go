@@ -26,6 +26,7 @@ func TestExecuteHelp(t *testing.T) {
 		"  get-leave  Get a mock leave application\n",
 		"  expense    Mock expense reimbursement commands\n",
 		"  procurement Mock procurement request commands\n",
+		"  recall     Mock source recall results\n",
 		"  stream     Print lines with a delay between each line\n",
 		"Flags:\n  -h, --help         help for this command\n",
 	} {
@@ -121,6 +122,105 @@ func TestProcurementHelp(t *testing.T) {
 		"\n" +
 		"Flags:\n" +
 		"  -h, --help         help for this command\n"
+
+	if result.stdout != want {
+		t.Fatalf("unexpected stdout:\nwant:\n%s\ngot:\n%s", want, result.stdout)
+	}
+}
+
+func TestRecallHelp(t *testing.T) {
+	t.Parallel()
+
+	result := runCommand(t, nil, "recall", "--help")
+
+	if result.code != ExitSuccess {
+		t.Fatalf("expected exit %d, got %d", ExitSuccess, result.code)
+	}
+
+	want := "" +
+		"Usage:\n" +
+		"  mock recall\n" +
+		"\n" +
+		"Description:\n" +
+		"  Group mock source recall commands that emit recall result bodies.\n" +
+		"\n" +
+		"Available Commands:\n" +
+		"  knowledge  Publish mock knowledge-base recall sources\n" +
+		"  web-search Publish mock web search recall sources\n" +
+		"  help       Help about any command\n" +
+		"\n" +
+		"Flags:\n" +
+		"  -h, --help         help for this command\n"
+
+	if result.stdout != want {
+		t.Fatalf("unexpected stdout:\nwant:\n%s\ngot:\n%s", want, result.stdout)
+	}
+}
+
+func TestRecallKnowledgeHelp(t *testing.T) {
+	t.Parallel()
+
+	result := runCommand(t, nil, "recall", "knowledge", "--help")
+
+	if result.code != ExitSuccess {
+		t.Fatalf("expected exit %d, got %d", ExitSuccess, result.code)
+	}
+
+	want := "" +
+		"Usage:\n" +
+		"  mock recall knowledge [flags]\n" +
+		"\n" +
+		"Description:\n" +
+		"  Return a fixed knowledge-base recall result body.\n" +
+		"\n" +
+		"Flags:\n" +
+		"  --output string    Response format: text|json\n" +
+		"  --query string     Recall query text\n" +
+		"  -h, --help         help for this command\n" +
+		"\n" +
+		"Params fields:\n" +
+		"  name     type     required   default                    description\n" +
+		"  query    string   no         办公用品申请流程                   Recall query text\n" +
+		"  output   string   no         text                       Response format: text|json\n" +
+		"\n" +
+		"Examples:\n" +
+		"  mock recall knowledge\n" +
+		"  mock recall knowledge --query 办公用品申请流程 --output json\n"
+
+	if result.stdout != want {
+		t.Fatalf("unexpected stdout:\nwant:\n%s\ngot:\n%s", want, result.stdout)
+	}
+}
+
+func TestRecallWebSearchHelp(t *testing.T) {
+	t.Parallel()
+
+	result := runCommand(t, nil, "recall", "web-search", "--help")
+
+	if result.code != ExitSuccess {
+		t.Fatalf("expected exit %d, got %d", ExitSuccess, result.code)
+	}
+
+	want := "" +
+		"Usage:\n" +
+		"  mock recall web-search [flags]\n" +
+		"\n" +
+		"Description:\n" +
+		"  Return a fixed web search recall result body.\n" +
+		"\n" +
+		"Flags:\n" +
+		"  --output string    Response format: text|json\n" +
+		"  --query string     Recall query text\n" +
+		"  -h, --help         help for this command\n" +
+		"\n" +
+		"Params fields:\n" +
+		"  name     type     required   default                            description\n" +
+		"  query    string   no         release checklist best practices   Recall query text\n" +
+		"  output   string   no         text                               Response format: text|json\n" +
+		"\n" +
+		"Examples:\n" +
+		"  mock recall web-search\n" +
+		"  mock recall web-search --query \"release checklist best practices\" --output json\n"
 
 	if result.stdout != want {
 		t.Fatalf("unexpected stdout:\nwant:\n%s\ngot:\n%s", want, result.stdout)
