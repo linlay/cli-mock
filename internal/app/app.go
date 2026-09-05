@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -80,6 +81,7 @@ func newRootCommand(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 		newStdinCommand(),
 		newLinesCommand(),
 		newStreamCommand(),
+		newQRLoginCommand(time.Sleep),
 		newCreateLeaveCommand(),
 		newGetLeaveCommand(),
 		newUpdateLeaveCommand(),

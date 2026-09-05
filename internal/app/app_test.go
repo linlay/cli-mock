@@ -27,6 +27,7 @@ func TestExecuteHelp(t *testing.T) {
 		"  expense    Mock expense reimbursement commands\n",
 		"  procurement Mock procurement request commands\n",
 		"  recall     Mock source recall results\n",
+		"  qr-login   Simulate a QR-code login\n",
 		"  stream     Print lines with a delay between each line\n",
 		"Flags:\n  -h, --help         help for this command\n",
 	} {
@@ -290,6 +291,79 @@ func TestStreamHelp(t *testing.T) {
 
 	if result.stdout != want {
 		t.Fatalf("unexpected stdout:\nwant:\n%s\ngot:\n%s", want, result.stdout)
+	}
+}
+
+func TestQRLoginHelp(t *testing.T) {
+	t.Parallel()
+
+	result := runCommand(t, nil, "qr-login", "--help")
+
+	if result.code != ExitSuccess {
+		t.Fatalf("expected exit %d, got %d", ExitSuccess, result.code)
+	}
+
+	want := "" +
+		"Usage:\n" +
+		"  mock qr-login [flags]\n" +
+		"\n" +
+		"Description:\n" +
+		"  Print a mock QR code, wait for simulated confirmation, and complete the login successfully.\n" +
+		"\n" +
+		"Flags:\n" +
+		"  --wait string      Time before automatic login approval\n" +
+		"  -h, --help         help for this command\n" +
+		"\n" +
+		"Params fields:\n" +
+		"  name   type     required   default   description\n" +
+		"  wait   string   no         20s       Time to wait before the login is approved automatically\n" +
+		"\n" +
+		"Examples:\n" +
+		"  mock qr-login\n" +
+		"  mock qr-login --wait 1s\n"
+
+	if result.stdout != want {
+		t.Fatalf("unexpected stdout:\nwant:\n%s\ngot:\n%s", want, result.stdout)
+	}
+}
+
+func TestQRLoginCommandWaitsThenSucceeds(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	var waited time.Duration
+	cmd := newQRLoginCommand(func(duration time.Duration) {
+		outputAtWait := stdout.String()
+		if !strings.Contains(outputAtWait, "Waiting for confirmation...\n") {
+			t.Errorf("expected QR prompt before wait, got %q", outputAtWait)
+		}
+		if strings.Contains(outputAtWait, "Login successful.\n") {
+			t.Errorf("success was emitted before wait: %q", outputAtWait)
+		}
+		waited = duration
+	})
+	cmd.SetOut(&stdout)
+	cmd.SetArgs(nil)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute qr-login: %v", err)
+	}
+	if waited != 20*time.Second {
+		t.Fatalf("expected 20s wait, got %v", waited)
+	}
+	output := stdout.String()
+	for _, want := range []string{
+		"Scan this QR code to log in:\n",
+		"██████████████",
+		"Waiting for confirmation...\n",
+		"Login successful.\n",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected output to contain %q, got %q", want, output)
+		}
+	}
+	if strings.Index(output, "Waiting for confirmation...") > strings.Index(output, "Login successful.") {
+		t.Fatalf("expected confirmation wait before success, got %q", output)
 	}
 }
 

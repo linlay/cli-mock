@@ -8,6 +8,7 @@
 - 返回指定退出码
 - 读取环境变量和标准输入
 - 生成 JSON、逐行输出和延迟流式输出
+- 输出二维码并在等待 20 秒后自动完成模拟登录
 - 通过无状态 CRUD 表单命令模拟较重的业务场景
 - 输出固定的知识库召回和网页搜索召回结果主体
 - 创建和检查可直接使用的 `.config` / `.local` mock 环境树
@@ -41,6 +42,7 @@ printf 'first\nsecond\n' | ./mock stdin
 ./mock lines 3
 ./mock stream 3 --interval 100ms
 ./mock stream 3 hello world done --interval 100ms
+./mock qr-login
 ./mock create-leave --payload '{"applicant_id":"E1001","department_id":"engineering","leave_type":"annual","start_date":"2026-04-20","end_date":"2026-04-22","days":2.5,"reason":"family_trip"}'
 ./mock expense add --payload-file ./expense.json --result approved --output json
 printf '{"requester_id":"E1001","department":"engineering","budget_code":"RD-2026-001","reason":"team expansion","delivery_city":"Shanghai","items":[{"name":"MacBook Pro","quantity":2,"unit_price":18999,"vendor":"Apple"}],"approvers":["MGR100","FIN200"],"requested_at":"2026-04-14T11:00:00+08:00"}' | ./mock procurement update --request-id PR-BA08D42C31 --payload-stdin --result rejected
@@ -78,6 +80,8 @@ go test ./...
   `env <key>` 会读取指定环境变量；变量不存在时返回退出码 `1`。
 - 标准输入：
   `stdin` 会把输入内容原样复制到标准输出。
+- 扫码登录：
+  `qr-login` 会先输出一个固定二维码和等待提示，默认等待 `20s` 后输出成功结果；测试时可用 `--wait` 调整等待时间。
 - XDG 环境树：
   `xdg apply` 根据 JSON manifest 写入 `.config/**` 和 `.local/**`，`xdg inspect` 读取该树并输出 JSON 摘要。
 
@@ -187,6 +191,7 @@ tar -xzf mock_v0.1.0_darwin_arm64.tar.gz
 ./mock echo hello
 ./mock json '{"name":"cli-mock"}'
 ./mock lines 2
+./mock qr-login --wait 100ms
 printf 'demo\n' | ./mock stdin
 ./mock recall knowledge --output json
 ./mock xdg inspect --root /tmp/mock-home
@@ -197,6 +202,7 @@ printf 'demo\n' | ./mock stdin
 - 命令报 `unknown command`：先执行 `./mock help` 确认子命令名。
 - `sleep` 或 `stream --interval` 报 duration 错误：使用 Go duration 格式，例如 `20ms`、`1s`。
 - `stream` 传了自定义内容却失败：确认内容条目数和 `count` 完全一致。
+- `qr-login` 等待时间不合适：默认值是 `20s`，可用 Go duration 格式通过 `--wait` 覆盖，例如 `--wait 500ms`。
 - 业务 `create` / `add` / `update` 命令报 payload 输入错误：确认只传了 `--payload`、`--payload-file`、`--payload-stdin` 其中一种。
 - `update-leave` 失败：确认 payload 里包含 `request_id`，且前缀是 `LV-`。
 - 业务 `get` / `delete` 失败：确认传了 `--request-id`，且前缀和业务类型匹配，例如 `EX-` 对应 `expense`。

@@ -14,6 +14,7 @@
 - 通过无状态 CRUD 命令模拟 JSON 驱动的业务表单：请假、报销、采购
 - 读取运行环境：`env`、`stdin`
 - 生成带时间间隔的流式输出：`stream`
+- 输出二维码并延迟自动成功：`qr-login`
 - 创建和读取 mock XDG 风格环境树：`xdg apply`、`xdg inspect`
 - 输出标准化帮助文本：`help` / `<command> --help`
 
@@ -150,6 +151,7 @@
 - `mock stdin`
 - `mock lines <count>`
 - `mock stream <count> --interval <duration>`
+- `mock qr-login [--wait <duration>]`
 - `mock create-leave (--payload <json> | --payload-file <path> | --payload-stdin) [--result <submitted|approved|rejected>] [--output <text|json>]`
 - `mock get-leave --request-id <id> [--result <found|not_found>] [--output <text|json>]`
 - `mock update-leave (--payload <json> | --payload-file <path> | --payload-stdin) [--result <submitted|approved|rejected>] [--output <text|json>]`
@@ -175,6 +177,7 @@
 - `env` 要求目标变量存在
 - `lines` 和 `stream` 要求 `count > 0`
 - `sleep` 和 `stream --interval` 使用 Go duration 语法
+- `qr-login` 先输出固定二维码，默认等待 20 秒后自动成功；`--wait` 使用 Go duration 语法
 - `stream` 在提供自定义内容时，内容条目数必须和 `count` 一致
 - 业务 CRUD 命令是无状态 mock，不会持久化或跨命令共享真实数据
 - 业务 `create` / `add` / `update` 命令只允许从 `--payload`、`--payload-file`、`--payload-stdin` 中选择一种输入来源
@@ -223,6 +226,7 @@ go test ./...
 ./mock fail broken
 ./mock stream 2 --interval 10ms
 ./mock stream 2 hello world --interval 10ms
+./mock qr-login --wait 10ms
 ./mock create-leave --payload '{"applicant_id":"E1001","department_id":"engineering","leave_type":"annual","start_date":"2026-04-20","end_date":"2026-04-22","days":2.5,"reason":"family_trip"}'
 ./mock expense add --payload-file ./expense.json --result approved --output json
 printf '{"request_id":"LV-7B0A3D4F10","applicant_id":"E1001","department_id":"engineering","leave_type":"annual","start_date":"2026-04-21","end_date":"2026-04-23","days":3,"reason":"family_trip"}' | ./mock update-leave --payload-stdin --result rejected
@@ -248,6 +252,7 @@ printf '{"request_id":"LV-7B0A3D4F10","applicant_id":"E1001","department_id":"en
 
 - 这是 mock 工具，不负责模拟复杂交互式 TTY 行为。
 - `stream` 通过 `time.Sleep` 实现，适合轻量测试，不适合高精度计时场景。
+- `qr-login` 是非交互 mock，不读取扫码结果或 stdin，而是在等待期结束后自动成功。
 - `json` 只做解析和紧凑输出，不保留原始格式或注释。
 - 本地依赖通过 `third_party/cobra` 固定；升级 Cobra 时要注意仓库内副本同步。
 - `xdg inspect --reveal` 只返回 UTF-8 文本或合法 JSON 文件内容；二进制文件仍只显示 metadata。
