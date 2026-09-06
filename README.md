@@ -8,7 +8,9 @@
 - 返回指定退出码
 - 读取环境变量和标准输入
 - 生成 JSON、逐行输出和延迟流式输出
-- 输出二维码并在等待 20 秒后自动完成模拟登录
+- 在默认 30 秒内持续输出结构化模拟日志
+- 混合追加日志与覆盖式进度，模拟过程输出和最终结果部分不同的长任务
+- 输出可识别二维码并在等待 20 秒后自动完成模拟登录
 - 通过无状态 CRUD 表单命令模拟较重的业务场景
 - 输出固定的知识库召回和网页搜索召回结果主体
 - 创建和检查可直接使用的 `.config` / `.local` mock 环境树
@@ -42,6 +44,8 @@ printf 'first\nsecond\n' | ./mock stdin
 ./mock lines 3
 ./mock stream 3 --interval 100ms
 ./mock stream 3 hello world done --interval 100ms
+./mock logs
+./mock long-run
 ./mock qr-login
 ./mock create-leave --payload '{"applicant_id":"E1001","department_id":"engineering","leave_type":"annual","start_date":"2026-04-20","end_date":"2026-04-22","days":2.5,"reason":"family_trip"}'
 ./mock expense add --payload-file ./expense.json --result approved --output json
@@ -80,8 +84,12 @@ go test ./...
   `env <key>` 会读取指定环境变量；变量不存在时返回退出码 `1`。
 - 标准输入：
   `stdin` 会把输入内容原样复制到标准输出。
+- 持续日志：
+  `logs` 默认持续 `30s`，每 `1s` 向 stdout 输出一条带 sequence 和 elapsed 的稳定日志；可用 `--duration` 和 `--interval` 调整。
+- 长时间混合输出：
+  `long-run` 默认运行 `30s`。永久日志持续追加；进度行在真实 TTY 中通过 ANSI 清除整行并使用 `\r` 回到行首，在可 seek 的重定向文件中原位改写。Platform Host Bash 使用普通 pipe tee，因此会进入不带 ANSI 的 `\r` 兼容分支，实时终端可连续解释每次进度刷新，最终 result 仍保留捕获到的原始控制流。
 - 扫码登录：
-  `qr-login` 会先输出一个固定二维码和等待提示，默认等待 `20s` 后输出成功结果；测试时可用 `--wait` 调整等待时间。
+  `qr-login` 会先输出一个带四格静区的标准二维码和等待提示，二维码固定编码 `https://example.com/?login=mock`；默认等待 `20s` 后输出成功结果，测试时可用 `--wait` 调整等待时间。
 - XDG 环境树：
   `xdg apply` 根据 JSON manifest 写入 `.config/**` 和 `.local/**`，`xdg inspect` 读取该树并输出 JSON 摘要。
 
@@ -191,6 +199,8 @@ tar -xzf mock_v0.1.0_darwin_arm64.tar.gz
 ./mock echo hello
 ./mock json '{"name":"cli-mock"}'
 ./mock lines 2
+./mock logs --duration 1s --interval 100ms
+./mock long-run --duration 1s --interval 100ms
 ./mock qr-login --wait 100ms
 printf 'demo\n' | ./mock stdin
 ./mock recall knowledge --output json
@@ -202,7 +212,10 @@ printf 'demo\n' | ./mock stdin
 - 命令报 `unknown command`：先执行 `./mock help` 确认子命令名。
 - `sleep` 或 `stream --interval` 报 duration 错误：使用 Go duration 格式，例如 `20ms`、`1s`。
 - `stream` 传了自定义内容却失败：确认内容条目数和 `count` 完全一致。
+- `logs` 执行时间过长：默认持续 `30s`，可通过 `--duration 5s --interval 500ms` 缩短并提高输出频率；两个值都必须大于零。
+- `long-run` 在 TTY、普通 pipe 和可 seek 重定向文件中会选择不同的覆盖方式：Platform 使用普通 pipe，可用于验证 `\r` 过程刷新、永久日志以及原始最终捕获之间的差异。
 - `qr-login` 等待时间不合适：默认值是 `20s`，可用 Go duration 格式通过 `--wait` 覆盖，例如 `--wait 500ms`。
+- `qr-login` 无法识别：确认终端使用等宽字体、没有压缩行高，并完整显示二维码外围的四格空白静区。
 - 业务 `create` / `add` / `update` 命令报 payload 输入错误：确认只传了 `--payload`、`--payload-file`、`--payload-stdin` 其中一种。
 - `update-leave` 失败：确认 payload 里包含 `request_id`，且前缀是 `LV-`。
 - 业务 `get` / `delete` 失败：确认传了 `--request-id`，且前缀和业务类型匹配，例如 `EX-` 对应 `expense`。

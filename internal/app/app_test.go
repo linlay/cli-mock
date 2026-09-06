@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestExecuteHelp(t *testing.T) {
@@ -27,6 +28,8 @@ func TestExecuteHelp(t *testing.T) {
 		"  expense    Mock expense reimbursement commands\n",
 		"  procurement Mock procurement request commands\n",
 		"  recall     Mock source recall results\n",
+		"  logs       Stream mock logs for a duration\n",
+		"  long-run   Run a long task with mixed persistent and overwritten output\n",
 		"  qr-login   Simulate a QR-code login\n",
 		"  stream     Print lines with a delay between each line\n",
 		"Flags:\n  -h, --help         help for this command\n",
@@ -324,6 +327,490 @@ func TestQRLoginHelp(t *testing.T) {
 
 	if result.stdout != want {
 		t.Fatalf("unexpected stdout:\nwant:\n%s\ngot:\n%s", want, result.stdout)
+	}
+}
+
+func TestMockLoginQRCodeEncodesPayload(t *testing.T) {
+	t.Parallel()
+
+	rows := strings.Split(mockLoginQRMatrix, "\n")
+	if len(rows) != 25 {
+		t.Fatalf("expected a version 2 QR code with 25 rows, got %d", len(rows))
+	}
+	matrix := make([][]bool, len(rows))
+	for rowIndex, row := range rows {
+		if len(row) != len(rows) {
+			t.Fatalf("row %d has %d modules, want %d", rowIndex, len(row), len(rows))
+		}
+		matrix[rowIndex] = make([]bool, len(row))
+		for columnIndex, module := range row {
+			switch module {
+			case '0':
+			case '1':
+				matrix[rowIndex][columnIndex] = true
+			default:
+				t.Fatalf("row %d column %d has invalid module %q", rowIndex, columnIndex, module)
+			}
+		}
+	}
+
+	const formatLMask1 = 0x72f3
+	primaryFormat, secondaryFormat := readQRFormatBits(matrix)
+	if primaryFormat != formatLMask1 || secondaryFormat != formatLMask1 {
+		t.Fatalf("unexpected format information: primary=%#x secondary=%#x", primaryFormat, secondaryFormat)
+	}
+
+	dataBits := readVersion2LMask1DataBits(matrix)
+	if len(dataBits) != 359 {
+		t.Fatalf("expected 359 data and remainder bits, got %d", len(dataBits))
+	}
+	for index, bit := range dataBits[352:] {
+		if bit {
+			t.Fatalf("remainder bit %d is set", index)
+		}
+	}
+	codewords := qrBitsToBytes(dataBits[:352])
+	if len(codewords) != 44 {
+		t.Fatalf("expected 44 codewords, got %d", len(codewords))
+	}
+	for exponent := range 10 {
+		value := byte(0)
+		root := qrGFPower(exponent)
+		for _, codeword := range codewords {
+			value = qrGFMultiply(value, root) ^ codeword
+		}
+		if value != 0 {
+			t.Fatalf("Reed-Solomon check failed at exponent %d: %#x", exponent, value)
+		}
+	}
+
+	if mode := qrReadBits(dataBits, 0, 4); mode != 4 {
+		t.Fatalf("expected byte mode, got %d", mode)
+	}
+	payloadLength := qrReadBits(dataBits, 4, 8)
+	payload := make([]byte, payloadLength)
+	for index := range payload {
+		payload[index] = byte(qrReadBits(dataBits, 12+index*8, 8))
+	}
+	if string(payload) != mockLoginQRPayload {
+		t.Fatalf("decoded payload %q, want %q", payload, mockLoginQRPayload)
+	}
+
+	renderedRows := strings.Split(renderMockLoginQRCode(), "\n")
+	wantRenderedSize := len(rows) + 2*mockLoginQRQuietZone
+	if len(renderedRows) != wantRenderedSize {
+		t.Fatalf("rendered QR has %d rows, want %d", len(renderedRows), wantRenderedSize)
+	}
+	for rowIndex, row := range renderedRows {
+		if modules := utf8.RuneCountInString(row) / 2; modules != wantRenderedSize {
+			t.Fatalf("rendered row %d has %d modules, want %d", rowIndex, modules, wantRenderedSize)
+		}
+	}
+}
+
+func readQRFormatBits(matrix [][]bool) (int, int) {
+	size := len(matrix)
+	primary := 0
+	secondary := 0
+	set := func(target *int, bit int, value bool) {
+		if value {
+			*target |= 1 << bit
+		}
+	}
+	for bit := range 6 {
+		set(&primary, bit, matrix[bit][8])
+	}
+	set(&primary, 6, matrix[7][8])
+	set(&primary, 7, matrix[8][8])
+	set(&primary, 8, matrix[8][7])
+	for bit := 9; bit < 15; bit++ {
+		set(&primary, bit, matrix[8][14-bit])
+	}
+	for bit := range 8 {
+		set(&secondary, bit, matrix[8][size-1-bit])
+	}
+	for bit := 8; bit < 15; bit++ {
+		set(&secondary, bit, matrix[size-15+bit][8])
+	}
+	return primary, secondary
+}
+
+func readVersion2LMask1DataBits(matrix [][]bool) []bool {
+	size := len(matrix)
+	functionModule := make([][]bool, size)
+	for row := range functionModule {
+		functionModule[row] = make([]bool, size)
+	}
+	markRectangle := func(left, top, width, height int) {
+		for row := top; row < top+height; row++ {
+			for column := left; column < left+width; column++ {
+				functionModule[row][column] = true
+			}
+		}
+	}
+	markRectangle(0, 0, 9, 9)
+	markRectangle(size-8, 0, 8, 9)
+	markRectangle(0, size-8, 9, 8)
+	for index := 8; index < size-8; index++ {
+		functionModule[6][index] = true
+		functionModule[index][6] = true
+	}
+	markRectangle(16, 16, 5, 5)
+
+	bits := make([]bool, 0, 359)
+	upward := true
+	for right := size - 1; right >= 1; right -= 2 {
+		if right == 6 {
+			right--
+		}
+		for verticalIndex := range size {
+			row := verticalIndex
+			if upward {
+				row = size - 1 - verticalIndex
+			}
+			for _, column := range []int{right, right - 1} {
+				if functionModule[row][column] {
+					continue
+				}
+				module := matrix[row][column]
+				if row%2 == 0 {
+					module = !module
+				}
+				bits = append(bits, module)
+			}
+		}
+		upward = !upward
+	}
+	return bits
+}
+
+func qrBitsToBytes(bits []bool) []byte {
+	result := make([]byte, len(bits)/8)
+	for index := range result {
+		result[index] = byte(qrReadBits(bits, index*8, 8))
+	}
+	return result
+}
+
+func qrReadBits(bits []bool, offset, count int) int {
+	value := 0
+	for index := range count {
+		value <<= 1
+		if bits[offset+index] {
+			value++
+		}
+	}
+	return value
+}
+
+func qrGFPower(exponent int) byte {
+	value := byte(1)
+	for range exponent {
+		value = qrGFMultiply(value, 2)
+	}
+	return value
+}
+
+func qrGFMultiply(left, right byte) byte {
+	product := 0
+	multiplicand := int(left)
+	multiplier := int(right)
+	for multiplier > 0 {
+		if multiplier&1 != 0 {
+			product ^= multiplicand
+		}
+		multiplier >>= 1
+		multiplicand <<= 1
+		if multiplicand&0x100 != 0 {
+			multiplicand ^= 0x11d
+		}
+	}
+	return byte(product)
+}
+
+func TestLogsHelp(t *testing.T) {
+	t.Parallel()
+
+	result := runCommand(t, nil, "logs", "--help")
+
+	if result.code != ExitSuccess {
+		t.Fatalf("expected exit %d, got %d", ExitSuccess, result.code)
+	}
+
+	want := "" +
+		"Usage:\n" +
+		"  mock logs [flags]\n" +
+		"\n" +
+		"Description:\n" +
+		"  Continuously emit deterministic mock log lines for the requested duration.\n" +
+		"\n" +
+		"Flags:\n" +
+		"  --duration string  Total time to emit logs\n" +
+		"  --interval string  Delay between log lines\n" +
+		"  -h, --help         help for this command\n" +
+		"\n" +
+		"Params fields:\n" +
+		"  name       type     required   default   description\n" +
+		"  duration   string   no         30s       Total time to emit logs\n" +
+		"  interval   string   no         1s        Delay between log lines\n" +
+		"\n" +
+		"Examples:\n" +
+		"  mock logs\n" +
+		"  mock logs --duration 5s --interval 500ms\n"
+
+	if result.stdout != want {
+		t.Fatalf("unexpected stdout:\nwant:\n%s\ngot:\n%s", want, result.stdout)
+	}
+}
+
+func TestLogsCommandStreamsForRequestedDuration(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	var waits []time.Duration
+	cmd := newLogsCommand(func(duration time.Duration) {
+		waits = append(waits, duration)
+	})
+	cmd.SetOut(&stdout)
+	cmd.SetArgs([]string{"--duration", "250ms", "--interval", "100ms"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute logs: %v", err)
+	}
+	wantOutput := "" +
+		"level=INFO sequence=1 elapsed=0s message=\"mock task is running\"\n" +
+		"level=INFO sequence=2 elapsed=100ms message=\"mock task is running\"\n" +
+		"level=INFO sequence=3 elapsed=200ms message=\"mock task is running\"\n" +
+		"level=INFO sequence=4 elapsed=250ms message=\"mock task completed\"\n"
+	if stdout.String() != wantOutput {
+		t.Fatalf("unexpected stdout:\nwant:\n%s\ngot:\n%s", wantOutput, stdout.String())
+	}
+	wantWaits := []time.Duration{100 * time.Millisecond, 100 * time.Millisecond, 50 * time.Millisecond}
+	if len(waits) != len(wantWaits) {
+		t.Fatalf("expected waits %v, got %v", wantWaits, waits)
+	}
+	for index := range wantWaits {
+		if waits[index] != wantWaits[index] {
+			t.Fatalf("expected waits %v, got %v", wantWaits, waits)
+		}
+	}
+}
+
+func TestLogsCommandRejectsNonPositiveDurations(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "duration", args: []string{"logs", "--duration", "0s"}, want: "--duration must be greater than 0"},
+		{name: "interval", args: []string{"logs", "--interval", "0s"}, want: "--interval must be greater than 0"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := runCommand(t, nil, test.args...)
+			if result.code != ExitUsage {
+				t.Fatalf("expected exit %d, got %d", ExitUsage, result.code)
+			}
+			if !strings.Contains(result.stderr, test.want) {
+				t.Fatalf("expected stderr to contain %q, got %q", test.want, result.stderr)
+			}
+		})
+	}
+}
+
+func TestLongRunHelp(t *testing.T) {
+	t.Parallel()
+
+	result := runCommand(t, nil, "long-run", "--help")
+
+	if result.code != ExitSuccess {
+		t.Fatalf("expected exit %d, got %d", ExitSuccess, result.code)
+	}
+
+	want := "" +
+		"Usage:\n" +
+		"  mock long-run [flags]\n" +
+		"\n" +
+		"Description:\n" +
+		"  Continuously append permanent log lines while updating an overwritten progress line, then return a partially different final capture.\n" +
+		"\n" +
+		"Flags:\n" +
+		"  --duration string  Total simulated task duration\n" +
+		"  --interval string  Delay between progress updates\n" +
+		"  -h, --help         help for this command\n" +
+		"\n" +
+		"Params fields:\n" +
+		"  name       type     required   default   description\n" +
+		"  duration   string   no         30s       Total simulated task duration\n" +
+		"  interval   string   no         1s        Delay between progress updates\n" +
+		"\n" +
+		"Examples:\n" +
+		"  mock long-run\n" +
+		"  mock long-run --duration 5s --interval 500ms\n"
+
+	if result.stdout != want {
+		t.Fatalf("unexpected stdout:\nwant:\n%s\ngot:\n%s", want, result.stdout)
+	}
+}
+
+func TestLongRunCommandOverwritesProgressButAppendsLogs(t *testing.T) {
+	t.Parallel()
+
+	outputPath := filepath.Join(t.TempDir(), "long-run.log")
+	outputFile, err := os.Create(outputPath)
+	if err != nil {
+		t.Fatalf("create long-run output: %v", err)
+	}
+	defer outputFile.Close()
+
+	var liveOutput bytes.Buffer
+	var liveOffset int
+	readAppended := func() {
+		data, readErr := os.ReadFile(outputPath)
+		if readErr != nil {
+			t.Fatalf("read long-run output: %v", readErr)
+		}
+		if len(data) > liveOffset {
+			liveOutput.Write(data[liveOffset:])
+			liveOffset = len(data)
+		}
+	}
+
+	var waits []time.Duration
+	cmd := newLongRunCommand(func(duration time.Duration) {
+		readAppended()
+		waits = append(waits, duration)
+	})
+	cmd.SetOut(outputFile)
+	cmd.SetArgs([]string{"--duration", "250ms", "--interval", "100ms"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute long-run: %v", err)
+	}
+	readAppended()
+	if err := outputFile.Sync(); err != nil {
+		t.Fatalf("sync long-run output: %v", err)
+	}
+	finalData, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read final long-run output: %v", err)
+	}
+	finalOutput := string(finalData)
+
+	if !strings.Contains(liveOutput.String(), "progress=000%") || !strings.Contains(liveOutput.String(), "status=working") {
+		t.Fatalf("expected live output to retain initial progress, got %q", liveOutput.String())
+	}
+	if strings.Contains(liveOutput.String(), "status=success") {
+		t.Fatalf("live append-only output unexpectedly contained overwritten final progress: %q", liveOutput.String())
+	}
+	if strings.Contains(finalOutput, "progress=000%") || !strings.Contains(finalOutput, "progress=100%") || !strings.Contains(finalOutput, "status=success") {
+		t.Fatalf("expected final capture to contain only final progress, got %q", finalOutput)
+	}
+	for _, want := range []string{
+		"event=start duration=250ms interval=100ms",
+		"event=log sequence=1 elapsed=100ms progress=40%",
+		"event=log sequence=2 elapsed=200ms progress=80%",
+		"event=log sequence=3 elapsed=250ms progress=100%",
+		"result=success duration=250ms logCount=3",
+	} {
+		if !strings.Contains(liveOutput.String(), want) || !strings.Contains(finalOutput, want) {
+			t.Fatalf("expected permanent output %q in live and final captures\nlive: %q\nfinal: %q", want, liveOutput.String(), finalOutput)
+		}
+	}
+	if liveOutput.String() == finalOutput {
+		t.Fatal("expected live output and final capture to differ")
+	}
+
+	wantWaits := []time.Duration{100 * time.Millisecond, 100 * time.Millisecond, 50 * time.Millisecond}
+	if len(waits) != len(wantWaits) {
+		t.Fatalf("expected waits %v, got %v", wantWaits, waits)
+	}
+	for index := range wantWaits {
+		if waits[index] != wantWaits[index] {
+			t.Fatalf("expected waits %v, got %v", wantWaits, waits)
+		}
+	}
+}
+
+func TestLongRunOutputUsesANSIClearLineForTerminal(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	output := &longRunOutput{writer: &stdout, terminal: true}
+	if err := output.WriteProgress(0, 0, time.Second, false); err != nil {
+		t.Fatalf("write initial progress: %v", err)
+	}
+	if err := output.WriteProgress(50, 500*time.Millisecond, time.Second, false); err != nil {
+		t.Fatalf("update progress: %v", err)
+	}
+	if err := output.WritePermanent("event=log sequence=1"); err != nil {
+		t.Fatalf("write permanent log: %v", err)
+	}
+	if err := output.WriteProgress(100, time.Second, time.Second, true); err != nil {
+		t.Fatalf("write completed progress: %v", err)
+	}
+
+	got := stdout.String()
+	if count := strings.Count(got, longRunClearLine); count != 5 {
+		t.Fatalf("expected 5 terminal clear-line sequences, got %d in %q", count, got)
+	}
+	wantUpdates := longRunClearLine + "progress=000% elapsed=0s/1s status=working" +
+		longRunClearLine + "progress=050% elapsed=500ms/1s status=working"
+	if !strings.HasPrefix(got, wantUpdates) {
+		t.Fatalf("expected terminal progress updates without fixed-width padding, got %q", got)
+	}
+	if !strings.Contains(got, longRunClearLine+"event=log sequence=1\n"+longRunClearLine+"progress=050%") {
+		t.Fatalf("expected the progress line to be cleared before the permanent log and redrawn afterward, got %q", got)
+	}
+	if !strings.HasSuffix(got, "\n") || !strings.HasSuffix(strings.TrimRight(got, " \n"), "status=success") {
+		t.Fatalf("expected completed terminal progress to end with a newline, got %q", got)
+	}
+}
+
+func TestLongRunCommandUsesCarriageReturnsForNonSeekableOutput(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	cmd := newLongRunCommand(func(time.Duration) {})
+	cmd.SetOut(&stdout)
+	cmd.SetArgs([]string{"--duration", "100ms", "--interval", "100ms"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute long-run: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "\rprogress=000%") || !strings.Contains(stdout.String(), "status=success") {
+		t.Fatalf("expected carriage-return progress fallback, got %q", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "event=log sequence=1") || !strings.Contains(stdout.String(), "result=success") {
+		t.Fatalf("expected permanent fallback output, got %q", stdout.String())
+	}
+}
+
+func TestLongRunCommandRejectsNonPositiveDurations(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "duration", args: []string{"long-run", "--duration", "0s"}, want: "--duration must be greater than 0"},
+		{name: "interval", args: []string{"long-run", "--interval", "0s"}, want: "--interval must be greater than 0"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := runCommand(t, nil, test.args...)
+			if result.code != ExitUsage {
+				t.Fatalf("expected exit %d, got %d", ExitUsage, result.code)
+			}
+			if !strings.Contains(result.stderr, test.want) {
+				t.Fatalf("expected stderr to contain %q, got %q", test.want, result.stderr)
+			}
+		})
 	}
 }
 

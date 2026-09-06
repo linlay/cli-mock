@@ -81,6 +81,8 @@ func newRootCommand(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 		newStdinCommand(),
 		newLinesCommand(),
 		newStreamCommand(),
+		newLogsCommand(time.Sleep),
+		newLongRunCommand(time.Sleep),
 		newQRLoginCommand(time.Sleep),
 		newCreateLeaveCommand(),
 		newGetLeaveCommand(),
